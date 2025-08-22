@@ -1,0 +1,28 @@
+[
+  {
+    "_id": "SWA",
+    "name": "SWA",
+    "description": "SWA Animation Project",
+    "created_at": "2025-01-01T00:00:00Z",
+    "updated_at": "2025-08-22T00:00:00Z",
+    "status": "active",
+    "templates": {
+      "shot_template": "V:/SWA/all/scene/{episode}/{sequence}/{shot}/{task}/version/",
+      "render_template": "V:/SWA/all/render/{episode}/{sequence}/{shot}/{task}/version/",
+      "comp_template": "V:/SWA/all/comp/{episode}/{sequence}/{shot}/{task}/version/"
+    },
+    "drive_mapping": {
+      "project_root": "V:/SWA",
+      "render_root": "V:/SWA/all/render",
+      "source_root": "V:/SWA/all/scene"
+    },
+    "departments": ["animation", "lighting", "compositing", "fx", "modeling", "texturing"],
+    "sequences": ["sq0010", "sq0020", "sq0030"],
+    "episodes": ["Ep00", "Ep01", "Ep02"],
+    "settings": {
+      "frame_rate": 24,
+      "resolution": "1920x1080",
+      "color_space": "Rec709"
+    }
+  }
+]

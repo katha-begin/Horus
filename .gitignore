@@ -1,0 +1,341 @@
+# Horus Project .gitignore
+# ================================
+# Comprehensive gitignore for Open RV + Rez development project
+
+# Python
+# -------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Rez Package Management
+# ----------------------
+# Rez build directories
+rez_build/
+build_*/
+install_*/
+
+# Rez package repositories (local development)
+packages/
+local_packages/
+dev_packages/
+
+# Rez environment files
+.rez/
+rez_env/
+rez_tmp/
+
+# Rez configuration overrides
+rezconfig_local.py
+.rezconfig
+
+# Open RV Specific
+# ----------------
+# Open RV build artifacts
+rv_build/
+rv_install/
+rv_packages_build/
+
+# Open RV cache and temporary files
+.rv/
+rv_cache/
+rv_temp/
+*.rvpkg
+*.rvprefs
+
+# Open RV session files (exclude from repo)
+*.rv
+*.rvsession
+
+# Open RV logs
+rv_*.log
+openrv_*.log
+
+# Qt/PySide
+# ----------
+# Qt Creator
+CMakeLists.txt.user
+CMakeLists.txt.user.*
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.qmlc
+*.jsc
+Makefile*
+*build-*
+*.qm
+.qmake.cache
+.qmake.stash
+
+# PySide2/PyQt5 generated files
+*_rc.py
+*_ui.py
+
+# CMake
+# -----
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# Build directories
+build*/
+Build*/
+BUILD*/
+
+# IDE and Editors
+# ---------------
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Visual Studio
+.vs/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# PyCharm
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# macOS
+# -----
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+# -------
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+# -----
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Media and Cache Files
+# ---------------------
+# Thumbnail cache
+thumbnails/
+.thumbnails/
+thumb_cache/
+
+# Media files (exclude large media from repo)
+*.exr
+*.hdr
+*.tiff
+*.tif
+*.dpx
+*.cin
+*.sgi
+*.pic
+*.tga
+*.mov
+*.mp4
+*.avi
+*.mkv
+*.mxf
+*.r3d
+*.ari
+
+# Exception: Keep small test media files
+!test_media/
+!test_resource/media/
+!**/test_*.exr
+!**/sample_*.png
+
+# Logs and Temporary Files
+# ------------------------
+*.log
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+
+# Documentation Build
+# -------------------
+docs/_build/
+docs/build/
+site/
+.sphinx_cache/
+
+# Package Management
+# ------------------
+# Node.js (if used for documentation)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database files
+# --------------
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration files with secrets
+# --------------------------------
+config_local.py
+secrets.py
+.env.local
+.env.production
+.env.development
+
+# Studio-specific
+# ---------------
+# Studio configuration (should be in separate repo)
+studio_config/
+pipeline_config/
+shotgrid_config/
+
+# Performance profiling
+# ---------------------
+*.prof
+*.pstats
+profile_*.txt
+
+# Temporary development files
+# ---------------------------
+scratch/
+temp/
+tmp/
+test_output/
+debug_output/
+
+# Archive files
+# -------------
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.7z
+*.rar
+
+# Custom project ignores
+# ----------------------
+# Add project-specific ignores here

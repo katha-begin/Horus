@@ -1,0 +1,68 @@
+[
+  {
+    "_id": "annotation_001",
+    "media_id": "media_001",
+    "text": "Great animation! The character movement feels natural.",
+    "author": "director.smith",
+    "timestamp": "2025-01-20T15:00:00Z",
+    "frame_number": 45,
+    "annotation_type": "comment",
+    "coordinates": {},
+    "_created_at": "2025-01-20T15:00:00Z",
+    "_updated_at": "2025-01-20T15:00:00Z",
+    "status": "open",
+    "priority": "low"
+  },
+  {
+    "_id": "annotation_002",
+    "media_id": "media_001",
+    "text": "The timing on the jump needs to be faster",
+    "author": "supervisor.jones",
+    "timestamp": "2025-01-20T15:15:00Z",
+    "frame_number": 78,
+    "annotation_type": "note",
+    "coordinates": {
+      "x": 960,
+      "y": 540,
+      "width": 200,
+      "height": 100
+    },
+    "_created_at": "2025-01-20T15:15:00Z",
+    "_updated_at": "2025-01-20T15:15:00Z",
+    "status": "open",
+    "priority": "medium"
+  },
+  {
+    "_id": "annotation_003",
+    "media_id": "media_002",
+    "text": "Lighting looks too dark in the background",
+    "author": "director.smith",
+    "timestamp": "2025-01-21T10:30:00Z",
+    "frame_number": 30,
+    "annotation_type": "feedback",
+    "coordinates": {
+      "x": 1400,
+      "y": 800,
+      "width": 300,
+      "height": 150
+    },
+    "_created_at": "2025-01-21T10:30:00Z",
+    "_updated_at": "2025-01-21T10:30:00Z",
+    "status": "open",
+    "priority": "high"
+  },
+  {
+    "_id": "annotation_004",
+    "media_id": "media_003",
+    "text": "Color grading approved for final delivery",
+    "author": "colorist.brown",
+    "timestamp": "2025-01-22T12:00:00Z",
+    "frame_number": 1,
+    "annotation_type": "approval",
+    "coordinates": {},
+    "_created_at": "2025-01-22T12:00:00Z",
+    "_updated_at": "2025-01-22T12:00:00Z",
+    "status": "resolved",
+    "priority": "low"
+  }
+]

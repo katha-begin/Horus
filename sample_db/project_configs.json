@@ -1,0 +1,52 @@
+[
+  {
+    "_id": "proj_001",
+    "name": "Demo Project Alpha",
+    "description": "Sample project for Horus MediaBrowser testing",
+    "created_at": "2025-01-15T10:00:00Z",
+    "updated_at": "2025-01-20T15:30:00Z",
+    "status": "active",
+    "templates": {
+      "shot_template": "/projects/{project_name}/shots/{sequence}/{shot}",
+      "render_template": "/projects/{project_name}/renders/{sequence}/{shot}/{version}",
+      "comp_template": "/projects/{project_name}/comp/{sequence}/{shot}/{version}"
+    },
+    "drive_mapping": {
+      "project_root": "C:/Projects/DemoAlpha",
+      "render_root": "C:/Renders/DemoAlpha",
+      "source_root": "C:/Source/DemoAlpha"
+    },
+    "departments": ["animation", "lighting", "compositing", "fx"],
+    "sequences": ["seq010", "seq020", "seq030"],
+    "settings": {
+      "frame_rate": 24,
+      "resolution": "1920x1080",
+      "color_space": "Rec709"
+    }
+  },
+  {
+    "_id": "proj_002", 
+    "name": "Demo Project Beta",
+    "description": "Second sample project for testing multiple projects",
+    "created_at": "2025-01-10T08:00:00Z",
+    "updated_at": "2025-01-22T12:15:00Z",
+    "status": "active",
+    "templates": {
+      "shot_template": "/projects/{project_name}/shots/{sequence}/{shot}",
+      "render_template": "/projects/{project_name}/renders/{sequence}/{shot}/{version}",
+      "comp_template": "/projects/{project_name}/comp/{sequence}/{shot}/{version}"
+    },
+    "drive_mapping": {
+      "project_root": "C:/Projects/DemoBeta",
+      "render_root": "C:/Renders/DemoBeta", 
+      "source_root": "C:/Source/DemoBeta"
+    },
+    "departments": ["modeling", "texturing", "lighting", "compositing"],
+    "sequences": ["seq100", "seq200"],
+    "settings": {
+      "frame_rate": 25,
+      "resolution": "2048x1556",
+      "color_space": "ACES"
+    }
+  }
+]
