@@ -1,0 +1,143 @@
+name: Branch Protection and CI/CD
+
+on:
+  push:
+    branches: [ main, develop, staging ]
+  pull_request:
+    branches: [ main, develop, staging ]
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Check code formatting with black
+      run: |
+        black --check --diff .
+    
+    - name: Check import sorting with isort
+      run: |
+        isort --check-only --diff .
+
+  version-check:
+    name: Version Consistency Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+    
+    - name: Check version consistency
+      run: |
+        python horus_version.py --info
+        python scripts/version_bump.py --dry-run --bump patch
+
+  build-test:
+    name: Build and Test
+    runs-on: windows-latest
+    needs: [code-quality, version-check]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        if (Test-Path requirements.txt) { pip install -r requirements.txt }
+    
+    - name: Test version system
+      run: |
+        python horus_version.py --show
+        python horus_version.py --info
+    
+    - name: Build executable (dry run)
+      run: |
+        python scripts/build_with_version.py --version-only --bump-build
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run Bandit Security Scan
+      uses: securecodewarrior/github-action-bandit@v1.0.1
+      with:
+        config_file: '.bandit'
+        
+    - name: Run Safety Check
+      run: |
+        pip install safety
+        safety check
+
+  branch-naming-check:
+    name: Branch Naming Convention Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Check branch naming convention
+      run: |
+        BRANCH_NAME="${{ github.head_ref }}"
+        echo "Checking branch name: $BRANCH_NAME"
+        
+        # Check if branch follows naming convention
+        if [[ $BRANCH_NAME =~ ^(feature|bugfix|hotfix|release|experiment)\/[a-z0-9\-]+$ ]]; then
+          echo "✅ Branch name follows convention"
+        else
+          echo "❌ Branch name does not follow convention"
+          echo "Expected format: feature/description, bugfix/description, etc."
+          exit 1
+        fi
+
+  auto-merge-develop:
+    name: Auto-merge to Develop
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    needs: [code-quality, version-check, build-test]
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Merge staging to develop
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git checkout develop
+        git merge staging --no-ff -m "Auto-merge staging to develop"
+        git push origin develop

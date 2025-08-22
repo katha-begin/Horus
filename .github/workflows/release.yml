@@ -1,0 +1,233 @@
+name: Release Management
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.2.0)'
+        required: true
+        type: string
+      release_type:
+        description: 'Type of release'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+        - release
+        - hotfix
+
+jobs:
+  validate-release:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+      is_prerelease: ${{ steps.check-prerelease.outputs.is_prerelease }}
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+    
+    - name: Extract version from tag or input
+      id: extract-version
+      run: |
+        if [ "${{ github.event_name }}" = "push" ]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+        else
+          VERSION="${{ github.event.inputs.version }}"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Extracted version: $VERSION"
+    
+    - name: Check if prerelease
+      id: check-prerelease
+      run: |
+        VERSION="${{ steps.extract-version.outputs.version }}"
+        if [[ $VERSION =~ -[a-zA-Z] ]]; then
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+        else
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Validate version format
+      run: |
+        VERSION="${{ steps.extract-version.outputs.version }}"
+        if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9\.\-]+)?$ ]]; then
+          echo "❌ Invalid version format: $VERSION"
+          exit 1
+        fi
+        echo "✅ Version format is valid: $VERSION"
+
+  build-release:
+    name: Build Release Artifacts
+    runs-on: windows-latest
+    needs: validate-release
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        if (Test-Path requirements.txt) { pip install -r requirements.txt }
+    
+    - name: Update version
+      run: |
+        $VERSION = "${{ needs.validate-release.outputs.version }}"
+        python scripts/version_bump.py --bump patch --force
+        python horus_version.py --info
+    
+    - name: Build executable
+      run: |
+        python scripts/build_with_version.py --clean
+    
+    - name: Create distribution package
+      run: |
+        $VERSION = "${{ needs.validate-release.outputs.version }}"
+        $ARCHIVE_NAME = "horus-$VERSION-windows"
+        
+        # Create distribution directory
+        New-Item -ItemType Directory -Path "dist/horus-$VERSION" -Force
+        
+        # Copy files
+        Copy-Item "dist/horus-rv.exe" "dist/horus-$VERSION/"
+        Copy-Item "version.json" "dist/horus-$VERSION/"
+        Copy-Item "build_info.json" "dist/horus-$VERSION/"
+        if (Test-Path "README.md") { Copy-Item "README.md" "dist/horus-$VERSION/" }
+        if (Test-Path "sample_db") { Copy-Item -Recurse "sample_db" "dist/horus-$VERSION/" }
+        
+        # Create archive
+        Compress-Archive -Path "dist/horus-$VERSION/*" -DestinationPath "dist/$ARCHIVE_NAME.zip"
+        
+        echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $env:GITHUB_ENV
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: horus-release-${{ needs.validate-release.outputs.version }}
+        path: |
+          dist/*.zip
+          dist/horus-rv.exe
+          build_info.json
+          CHANGELOG-*.md
+
+  generate-release-notes:
+    name: Generate Release Notes
+    runs-on: ubuntu-latest
+    needs: validate-release
+    
+    outputs:
+      release_notes: ${{ steps.generate-notes.outputs.release_notes }}
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+    
+    - name: Generate release notes
+      id: generate-notes
+      run: |
+        VERSION="${{ needs.validate-release.outputs.version }}"
+        python scripts/release_manager.py changelog $VERSION
+        
+        # Read changelog and set as output
+        if [ -f "CHANGELOG-$VERSION.md" ]; then
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          cat "CHANGELOG-$VERSION.md" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        else
+          echo "release_notes=No changelog generated" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Upload changelog
+      uses: actions/upload-artifact@v3
+      with:
+        name: changelog-${{ needs.validate-release.outputs.version }}
+        path: CHANGELOG-*.md
+
+  create-github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate-release, build-release, generate-release-notes]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: horus-release-${{ needs.validate-release.outputs.version }}
+        path: ./artifacts
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ needs.validate-release.outputs.version }}
+        name: Horus v${{ needs.validate-release.outputs.version }}
+        body: ${{ needs.generate-release-notes.outputs.release_notes }}
+        prerelease: ${{ needs.validate-release.outputs.is_prerelease == 'true' }}
+        files: |
+          ./artifacts/*.zip
+          ./artifacts/horus-rv.exe
+          ./artifacts/build_info.json
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-release:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [validate-release, create-github-release]
+    if: always() && needs.create-github-release.result == 'success'
+    
+    steps:
+    - name: Notify success
+      run: |
+        VERSION="${{ needs.validate-release.outputs.version }}"
+        echo "🎉 Successfully released Horus v$VERSION"
+        echo "📦 Release available at: https://github.com/${{ github.repository }}/releases/tag/v$VERSION"
+
+  update-develop:
+    name: Update Develop Branch
+    runs-on: ubuntu-latest
+    needs: [validate-release, create-github-release]
+    if: github.event_name == 'push' && needs.create-github-release.result == 'success'
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Update develop branch
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # Merge main to develop to ensure develop has the latest release
+        git checkout develop
+        git pull origin develop
+        git merge origin/main --no-ff -m "Merge release v${{ needs.validate-release.outputs.version }} to develop"
+        git push origin develop
