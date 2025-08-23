@@ -37,6 +37,10 @@ annotations_popup_window = None
 # Feature flags
 ENABLE_TIMELINE_PLAYLIST = True  # Enable/disable Timeline Playlist feature
 
+# Timeline Playlist global data
+timeline_playlist_data = []
+current_playlist_id = None
+
 def create_comments_panel():
     """Create comments and annotations panel."""
     try:
@@ -530,68 +534,1100 @@ def create_reply_widget(reply_data):
         return QWidget()
 
 def create_timeline_playlist_panel():
-    """Create Timeline Playlist panel using the new professional widget."""
+    """Create Timeline Playlist panel integrated into Horus-RV."""
     try:
-        # Import the Timeline Playlist Widget
-        import sys
-        import os
+        from PySide2.QtWidgets import (
+            QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTreeWidget, QTreeWidgetItem,
+            QScrollArea, QFrame, QLabel, QPushButton, QLineEdit, QComboBox,
+            QMenu, QAction, QMessageBox, QInputDialog, QAbstractItemView, QGridLayout
+        )
+        from PySide2.QtCore import Qt
+        from PySide2.QtGui import QColor
 
-        # Add current directory to path for import
-        current_dir = os.getcwd()
-        if current_dir not in sys.path:
-            sys.path.insert(0, current_dir)
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
 
-        from horus_timeline_playlist_widget import HorusTimelinePlaylistWidget
+        # Header with title and controls
+        header = create_timeline_playlist_header()
+        layout.addWidget(header)
 
-        # Create the widget
-        playlist_widget = HorusTimelinePlaylistWidget()
+        # Main splitter: Playlist Tree (left) | Timeline (right)
+        main_splitter = QSplitter(Qt.Horizontal)
+        main_splitter.setChildrenCollapsible(False)
 
-        # Connect signals to integrate with existing system
-        playlist_widget.playback_requested.connect(on_playlist_playback_requested)
-        playlist_widget.playlist_selected.connect(on_playlist_selected)
-        playlist_widget.clip_selected.connect(on_clip_selected)
+        # Left panel: Playlist tree and controls
+        left_panel = create_playlist_tree_panel()
+        main_splitter.addWidget(left_panel)
+
+        # Right panel: Timeline tracks
+        right_panel = create_timeline_tracks_panel()
+        main_splitter.addWidget(right_panel)
+
+        # Set splitter proportions (30% left, 70% right)
+        main_splitter.setSizes([300, 700])
+        layout.addWidget(main_splitter)
+
+        # Store references
+        widget.main_splitter = main_splitter
+        widget.left_panel = left_panel
+        widget.right_panel = right_panel
+
+        # Load initial data
+        load_timeline_playlist_data()
+        populate_playlist_tree()
 
         print("Timeline Playlist panel created successfully")
-        return playlist_widget
+        return widget
 
-    except ImportError as e:
-        print(f"Could not import Timeline Playlist Widget: {e}")
-        print("Timeline Playlist feature disabled")
-        return None
     except Exception as e:
         print(f"Error creating Timeline Playlist panel: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
-def on_playlist_playback_requested(media_path, frame):
-    """Handle playback request from Timeline Playlist."""
+def create_timeline_playlist_header():
+    """Create header with title and main controls."""
+    header = QFrame()
+    header.setFixedHeight(40)
+    header.setStyleSheet("""
+        QFrame {
+            background-color: #2d2d2d;
+            border-bottom: 1px solid #555555;
+        }
+        QLabel {
+            color: #e0e0e0;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        QPushButton {
+            background-color: #404040;
+            color: #e0e0e0;
+            border: 1px solid #555555;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        QPushButton:hover {
+            background-color: #4a4a4a;
+            border-color: #0078d4;
+        }
+    """)
+
+    layout = QHBoxLayout(header)
+    layout.setContentsMargins(10, 5, 10, 5)
+
+    # Title
+    title = QLabel("Timeline Playlist Manager")
+    layout.addWidget(title)
+
+    layout.addStretch()
+
+    # Main controls
+    new_playlist_btn = QPushButton("New Playlist")
+    new_playlist_btn.clicked.connect(create_new_playlist)
+    layout.addWidget(new_playlist_btn)
+
+    refresh_btn = QPushButton("Refresh")
+    refresh_btn.clicked.connect(refresh_timeline_playlists)
+    layout.addWidget(refresh_btn)
+
+    # Store references
+    header.new_playlist_btn = new_playlist_btn
+    header.refresh_btn = refresh_btn
+
+    return header
+
+def create_playlist_tree_panel():
+    """Create left panel with playlist tree and controls."""
+    from PySide2.QtWidgets import QWidget, QVBoxLayout, QLabel, QTreeWidget, QAbstractItemView, QFrame, QGridLayout, QPushButton
+
+    panel = QWidget()
+    panel.setMinimumWidth(250)
+    panel.setMaximumWidth(400)
+
+    layout = QVBoxLayout(panel)
+    layout.setContentsMargins(5, 5, 5, 5)
+    layout.setSpacing(5)
+
+    # Playlist tree header
+    tree_header = QLabel("Playlists")
+    tree_header.setStyleSheet("font-weight: bold; color: #e0e0e0; font-size: 12px;")
+    layout.addWidget(tree_header)
+
+    # Playlist tree widget
+    playlist_tree = QTreeWidget()
+    playlist_tree.setHeaderHidden(True)
+    playlist_tree.setRootIsDecorated(True)
+    playlist_tree.setSelectionMode(QAbstractItemView.SingleSelection)
+    playlist_tree.setDragDropMode(QAbstractItemView.InternalMove)
+
+    # Setup tree styling
+    playlist_tree.setStyleSheet("""
+        QTreeWidget {
+            background-color: #2d2d2d;
+            color: #e0e0e0;
+            border: 1px solid #555555;
+            selection-background-color: #0078d4;
+            outline: none;
+        }
+        QTreeWidget::item {
+            padding: 4px;
+            border-bottom: 1px solid #3a3a3a;
+        }
+        QTreeWidget::item:selected {
+            background-color: #0078d4;
+            color: white;
+        }
+        QTreeWidget::item:hover {
+            background-color: #404040;
+        }
+    """)
+
+    # Connect selection handler
+    playlist_tree.itemSelectionChanged.connect(on_playlist_tree_selection_changed)
+    playlist_tree.itemDoubleClicked.connect(on_playlist_double_clicked)
+
+    layout.addWidget(playlist_tree)
+
+    # Playlist controls
+    controls = QFrame()
+    controls.setFixedHeight(80)
+    controls.setStyleSheet("""
+        QFrame {
+            background-color: #3a3a3a;
+            border: 1px solid #555555;
+            border-radius: 3px;
+        }
+        QPushButton {
+            background-color: #404040;
+            color: #e0e0e0;
+            border: 1px solid #555555;
+            padding: 4px 8px;
+            border-radius: 2px;
+            font-size: 11px;
+        }
+        QPushButton:hover {
+            background-color: #4a4a4a;
+            border-color: #0078d4;
+        }
+    """)
+
+    controls_layout = QGridLayout(controls)
+    controls_layout.setContentsMargins(5, 5, 5, 5)
+    controls_layout.setSpacing(3)
+
+    # Playlist controls
+    duplicate_btn = QPushButton("Duplicate")
+    duplicate_btn.clicked.connect(duplicate_current_playlist)
+    controls_layout.addWidget(duplicate_btn, 0, 0)
+
+    rename_btn = QPushButton("Rename")
+    rename_btn.clicked.connect(rename_current_playlist)
+    controls_layout.addWidget(rename_btn, 0, 1)
+
+    delete_btn = QPushButton("Delete")
+    delete_btn.clicked.connect(delete_current_playlist)
+    controls_layout.addWidget(delete_btn, 1, 0)
+
+    add_media_btn = QPushButton("Add Media")
+    add_media_btn.clicked.connect(show_add_media_dialog)
+    controls_layout.addWidget(add_media_btn, 1, 1)
+
+    layout.addWidget(controls)
+
+    # Store references
+    panel.playlist_tree = playlist_tree
+    panel.controls = controls
+
+    return panel
+
+def create_timeline_tracks_panel():
+    """Create right panel with timeline tracks."""
+    from PySide2.QtWidgets import QWidget, QVBoxLayout, QScrollArea, QLabel, QFrame, QHBoxLayout, QPushButton, QComboBox
+
+    panel = QWidget()
+
+    layout = QVBoxLayout(panel)
+    layout.setContentsMargins(5, 5, 5, 5)
+    layout.setSpacing(5)
+
+    # Timeline header with controls
+    timeline_header = QFrame()
+    timeline_header.setFixedHeight(35)
+    timeline_header.setStyleSheet("""
+        QFrame {
+            background-color: #2d2d2d;
+            border-bottom: 1px solid #555555;
+        }
+        QLabel {
+            color: #e0e0e0;
+            font-size: 11px;
+        }
+        QPushButton {
+            background-color: #404040;
+            color: #e0e0e0;
+            border: 1px solid #555555;
+            padding: 3px 8px;
+            border-radius: 2px;
+            font-size: 10px;
+        }
+        QPushButton:hover {
+            background-color: #4a4a4a;
+            border-color: #0078d4;
+        }
+        QComboBox {
+            background-color: #404040;
+            color: #e0e0e0;
+            border: 1px solid #555555;
+            padding: 2px 5px;
+            border-radius: 2px;
+            font-size: 10px;
+        }
+    """)
+
+    header_layout = QHBoxLayout(timeline_header)
+    header_layout.setContentsMargins(10, 5, 10, 5)
+
+    # Current playlist name
+    current_playlist_label = QLabel("No playlist selected")
+    current_playlist_label.setStyleSheet("font-weight: bold;")
+    header_layout.addWidget(current_playlist_label)
+
+    header_layout.addStretch()
+
+    # Timeline controls
+    play_btn = QPushButton("▶ Play")
+    play_btn.clicked.connect(play_current_playlist)
+    header_layout.addWidget(play_btn)
+
+    stop_btn = QPushButton("⏹ Stop")
+    stop_btn.clicked.connect(stop_playlist_playback)
+    header_layout.addWidget(stop_btn)
+
+    # Zoom controls
+    zoom_label = QLabel("Zoom:")
+    header_layout.addWidget(zoom_label)
+
+    zoom_combo = QComboBox()
+    zoom_combo.addItems(["25%", "50%", "75%", "100%", "150%", "200%", "Fit"])
+    zoom_combo.setCurrentText("100%")
+    zoom_combo.currentTextChanged.connect(on_timeline_zoom_changed)
+    header_layout.addWidget(zoom_combo)
+
+    layout.addWidget(timeline_header)
+
+    # Timeline scroll area
+    scroll_area = QScrollArea()
+    scroll_area.setWidgetResizable(True)
+    scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+    scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+    # Timeline content widget
+    timeline_content = QWidget()
+    timeline_layout = QVBoxLayout(timeline_content)
+    timeline_layout.setContentsMargins(0, 0, 0, 0)
+    timeline_layout.setSpacing(2)
+
+    # Add empty message initially
+    empty_label = QLabel("Select a playlist to view timeline")
+    empty_label.setStyleSheet("""
+        QLabel {
+            color: #888888;
+            font-size: 14px;
+            padding: 20px;
+            text-align: center;
+        }
+    """)
+    empty_label.setAlignment(Qt.AlignCenter)
+    timeline_layout.addWidget(empty_label)
+
+    scroll_area.setWidget(timeline_content)
+    layout.addWidget(scroll_area)
+
+    # Store references
+    panel.timeline_header = timeline_header
+    panel.current_playlist_label = current_playlist_label
+    panel.timeline_content = timeline_content
+    panel.timeline_layout = timeline_layout
+    panel.scroll_area = scroll_area
+
+    return panel
+
+def load_timeline_playlist_data():
+    """Load playlist data from JSON database."""
+    global timeline_playlist_data
+
     try:
-        import rv.commands as rvc
-        rvc.addSource(media_path)
-        if frame > 0:
-            rvc.setFrame(frame)
-        print(f"Loading from playlist: {media_path} at frame {frame}")
+        import json
+        import os
+
+        # Load playlists
+        playlist_file = os.path.join("sample_db", "horus_playlists.json")
+        if os.path.exists(playlist_file):
+            with open(playlist_file, 'r') as f:
+                timeline_playlist_data = json.load(f)
+                print(f"Loaded {len(timeline_playlist_data)} playlists")
+        else:
+            timeline_playlist_data = []
+            print("No playlist file found, starting with empty playlists")
+
     except Exception as e:
-        print(f"Error loading from playlist: {e}")
+        print(f"Error loading playlist data: {e}")
+        timeline_playlist_data = []
 
-def on_playlist_selected(playlist_id):
-    """Handle playlist selection from Timeline Playlist."""
-    print(f"Playlist selected: {playlist_id}")
-    # TODO: Update other panels if needed
+def save_timeline_playlist_data():
+    """Save playlist data to JSON database."""
+    try:
+        import json
+        import os
 
-def on_clip_selected(clip_id):
-    """Handle clip selection from Timeline Playlist."""
-    print(f"Clip selected: {clip_id}")
-    # TODO: Update other panels if needed
+        playlist_file = os.path.join("sample_db", "horus_playlists.json")
+        with open(playlist_file, 'w') as f:
+            json.dump(timeline_playlist_data, f, indent=2)
+        print("Playlist data saved")
 
-def add_media_to_current_playlist(media_record):
-    """Add media from media browser to current playlist."""
+    except Exception as e:
+        print(f"Error saving playlist data: {e}")
+
+def populate_playlist_tree():
+    """Populate the playlist tree with data."""
     global timeline_playlist_dock
 
-    if timeline_playlist_dock and timeline_playlist_dock.widget():
-        playlist_widget = timeline_playlist_dock.widget()
-        playlist_widget.add_media_to_playlist(media_record)
-    else:
-        print("Timeline Playlist not available")
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        from PySide2.QtWidgets import QTreeWidgetItem
+        from PySide2.QtCore import Qt
+        from PySide2.QtGui import QColor
+
+        widget = timeline_playlist_dock.widget()
+        playlist_tree = widget.left_panel.playlist_tree
+        playlist_tree.clear()
+
+        if not timeline_playlist_data:
+            return
+
+        # Group playlists by project
+        projects = {}
+        for playlist in timeline_playlist_data:
+            project_id = playlist.get("project_id", "unknown")
+            if project_id not in projects:
+                projects[project_id] = []
+            projects[project_id].append(playlist)
+
+        # Create tree structure
+        for project_id, playlists in projects.items():
+            project_item = QTreeWidgetItem(playlist_tree)
+            project_item.setText(0, f"Project: {project_id}")
+            project_item.setData(0, Qt.UserRole, {"type": "project", "id": project_id})
+
+            # Add playlists under project
+            for playlist in playlists:
+                playlist_item = QTreeWidgetItem(project_item)
+                playlist_name = playlist.get("name", "Unnamed Playlist")
+                clip_count = len(playlist.get("clips", []))
+                playlist_item.setText(0, f"{playlist_name} ({clip_count} clips)")
+                playlist_item.setData(0, Qt.UserRole, {
+                    "type": "playlist",
+                    "id": playlist["_id"],
+                    "data": playlist
+                })
+
+                # Set playlist status color
+                status = playlist.get("status", "draft")
+                if status == "active":
+                    playlist_item.setForeground(0, QColor("#4CAF50"))
+                elif status == "draft":
+                    playlist_item.setForeground(0, QColor("#FFC107"))
+
+        # Expand all items
+        playlist_tree.expandAll()
+
+    except Exception as e:
+        print(f"Error populating playlist tree: {e}")
+
+def on_playlist_tree_selection_changed():
+    """Handle playlist selection change."""
+    global timeline_playlist_dock, current_playlist_id
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        widget = timeline_playlist_dock.widget()
+        playlist_tree = widget.left_panel.playlist_tree
+        selected_items = playlist_tree.selectedItems()
+
+        if not selected_items:
+            current_playlist_id = None
+            widget.right_panel.current_playlist_label.setText("No playlist selected")
+            clear_timeline_display()
+            return
+
+        item = selected_items[0]
+        item_data = item.data(0, Qt.UserRole)
+
+        if item_data and item_data.get("type") == "playlist":
+            playlist_id = item_data["id"]
+            playlist_data = item_data["data"]
+
+            current_playlist_id = playlist_id
+            widget.right_panel.current_playlist_label.setText(f"Playlist: {playlist_data.get('name', 'Unnamed')}")
+
+            # Load timeline for this playlist
+            load_playlist_timeline(playlist_data)
+
+            print(f"Selected playlist: {playlist_id}")
+
+    except Exception as e:
+        print(f"Error handling playlist selection: {e}")
+
+def on_playlist_double_clicked(item, column):
+    """Handle playlist double-click to start playback."""
+    try:
+        item_data = item.data(0, Qt.UserRole)
+        if item_data and item_data.get("type") == "playlist":
+            play_current_playlist()
+    except Exception as e:
+        print(f"Error handling playlist double-click: {e}")
+
+def load_playlist_timeline(playlist_data):
+    """Load timeline visualization for the given playlist."""
+    global timeline_playlist_dock
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        widget = timeline_playlist_dock.widget()
+        clear_timeline_display()
+
+        clips = playlist_data.get("clips", [])
+        tracks = playlist_data.get("tracks", [])
+
+        if not clips:
+            # Show empty timeline message
+            from PySide2.QtWidgets import QLabel
+            from PySide2.QtCore import Qt
+
+            empty_label = QLabel("No clips in this playlist")
+            empty_label.setStyleSheet("""
+                QLabel {
+                    color: #888888;
+                    font-size: 14px;
+                    padding: 20px;
+                    text-align: center;
+                }
+            """)
+            empty_label.setAlignment(Qt.AlignCenter)
+            widget.right_panel.timeline_layout.addWidget(empty_label)
+            return
+
+        # Create timeline ruler
+        ruler = create_timeline_ruler(clips)
+        widget.right_panel.timeline_layout.addWidget(ruler)
+
+        # Create tracks
+        for track in tracks:
+            track_widget = create_timeline_track_widget(track, clips)
+            widget.right_panel.timeline_layout.addWidget(track_widget)
+
+        # Add stretch to push tracks to top
+        widget.right_panel.timeline_layout.addStretch()
+
+    except Exception as e:
+        print(f"Error loading playlist timeline: {e}")
+
+def clear_timeline_display():
+    """Clear the timeline display."""
+    global timeline_playlist_dock
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        widget = timeline_playlist_dock.widget()
+        timeline_layout = widget.right_panel.timeline_layout
+
+        # Remove all widgets from timeline layout
+        while timeline_layout.count():
+            child = timeline_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+    except Exception as e:
+        print(f"Error clearing timeline display: {e}")
+
+def create_timeline_ruler(clips):
+    """Create timeline ruler with timecode markers."""
+    from PySide2.QtWidgets import QFrame, QHBoxLayout, QLabel
+
+    ruler = QFrame()
+    ruler.setFixedHeight(25)
+    ruler.setStyleSheet("""
+        QFrame {
+            background-color: #1e1e1e;
+            border-bottom: 1px solid #555555;
+        }
+        QLabel {
+            color: #cccccc;
+            font-size: 10px;
+            font-family: monospace;
+        }
+    """)
+
+    layout = QHBoxLayout(ruler)
+    layout.setContentsMargins(60, 0, 0, 0)  # Offset for track labels
+    layout.setSpacing(0)
+
+    # Calculate total duration
+    total_duration = 0
+    if clips:
+        total_duration = max(clip.get("position", 0) + clip.get("duration", 0) for clip in clips)
+
+    # Add timecode markers every 30 frames (assuming 24fps)
+    if total_duration > 0:
+        for frame in range(0, int(total_duration) + 30, 30):
+            seconds = frame / 24
+            minutes = int(seconds // 60)
+            secs = int(seconds % 60)
+            frames = frame % 24
+
+            timecode = f"{minutes:02d}:{secs:02d}:{frames:02d}"
+            marker = QLabel(timecode)
+            marker.setFixedWidth(60)
+            marker.setAlignment(Qt.AlignCenter)
+            layout.addWidget(marker)
+
+    layout.addStretch()
+    return ruler
+
+def create_timeline_track_widget(track_data, clips):
+    """Create a timeline track widget with clips."""
+    from PySide2.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget, QPushButton
+    from PySide2.QtCore import Qt
+
+    track = QFrame()
+    track.setFixedHeight(track_data.get("height", 60))
+    track.setStyleSheet("""
+        QFrame {
+            background-color: #2d2d2d;
+            border-bottom: 1px solid #555555;
+        }
+    """)
+
+    layout = QHBoxLayout(track)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(0)
+
+    # Track label
+    track_label = QLabel(track_data.get("name", "Track"))
+    track_label.setFixedWidth(60)
+    track_label.setStyleSheet("""
+        QLabel {
+            background-color: #3a3a3a;
+            color: #e0e0e0;
+            padding: 5px;
+            border-right: 1px solid #555555;
+            font-size: 11px;
+            font-weight: bold;
+        }
+    """)
+    track_label.setAlignment(Qt.AlignCenter)
+    layout.addWidget(track_label)
+
+    # Clips area
+    clips_area = QWidget()
+    clips_layout = QHBoxLayout(clips_area)
+    clips_layout.setContentsMargins(0, 0, 0, 0)
+    clips_layout.setSpacing(1)
+
+    # Filter clips for this track
+    track_clips = [clip for clip in clips if clip.get("track") == track_data.get("track_id")]
+    track_clips.sort(key=lambda x: x.get("position", 0))
+
+    # Department colors
+    department_colors = {
+        "animation": "#1f4e79",
+        "lighting": "#d68910",
+        "compositing": "#196f3d",
+        "fx": "#6c3483",
+        "modeling": "#a93226",
+        "texturing": "#8b4513",
+        "rigging": "#2e8b57",
+        "layout": "#4682b4"
+    }
+
+    # Add clips to track
+    current_position = 0
+    for clip in track_clips:
+        clip_position = clip.get("position", 0)
+        clip_duration = clip.get("duration", 0)
+
+        # Add gap if needed
+        if clip_position > current_position:
+            gap_width = max(1, (clip_position - current_position) * 2)  # 2 pixels per frame
+            gap = QWidget()
+            gap.setFixedWidth(gap_width)
+            clips_layout.addWidget(gap)
+
+        # Create clip widget
+        clip_widget = create_timeline_clip_widget(clip, department_colors)
+        clips_layout.addWidget(clip_widget)
+
+        current_position = clip_position + clip_duration
+
+    clips_layout.addStretch()
+    layout.addWidget(clips_area)
+
+    return track
+
+def create_timeline_clip_widget(clip_data, department_colors):
+    """Create a timeline clip widget."""
+    from PySide2.QtWidgets import QPushButton
+
+    duration = clip_data.get("duration", 0)
+    department = clip_data.get("department", "unknown")
+
+    # Calculate width based on duration (2 pixels per frame)
+    width = max(40, duration * 2)
+
+    clip = QPushButton()
+    clip.setFixedSize(width, 50)
+    clip.setToolTip(f"{clip_data.get('sequence', '')}/{clip_data.get('shot', '')} - {clip_data.get('version', '')}")
+
+    # Get department color
+    color = department_colors.get(department, "#666666")
+
+    clip.setStyleSheet(f"""
+        QPushButton {{
+            background-color: {color};
+            color: white;
+            border: 1px solid #555555;
+            border-radius: 3px;
+            font-size: 9px;
+            font-weight: bold;
+            text-align: left;
+            padding: 2px;
+        }}
+        QPushButton:hover {{
+            border-color: #ffffff;
+            background-color: {color}dd;
+        }}
+        QPushButton:pressed {{
+            background-color: {color}aa;
+        }}
+    """)
+
+    # Set clip text
+    shot_name = f"{clip_data.get('shot', 'shot')}"
+    version = clip_data.get('version', 'v001')
+    clip.setText(f"{shot_name}\n{version}")
+
+    # Connect click handler
+    clip.clicked.connect(lambda: on_timeline_clip_clicked(clip_data))
+
+    return clip
+
+def on_timeline_clip_clicked(clip_data):
+    """Handle clip click to load in Open RV."""
+    try:
+        # Find media record for this clip
+        media_id = clip_data.get("media_id")
+
+        # Get media records from Horus connector
+        if horus_connector:
+            media_records = horus_connector.get_media_records()
+            media_record = None
+
+            for record in media_records:
+                if record.get("_id") == media_id:
+                    media_record = record
+                    break
+
+            if media_record:
+                file_path = media_record.get("file_path", "")
+                if file_path:
+                    # Load in RV
+                    import rv.commands as rvc
+                    rvc.addSource(file_path)
+                    print(f"Loading clip from playlist: {file_path}")
+                else:
+                    print(f"No file path for clip: {media_id}")
+            else:
+                print(f"Media record not found: {media_id}")
+        else:
+            print("Horus connector not available")
+
+    except Exception as e:
+        print(f"Error loading clip from playlist: {e}")
+
+# Playlist management functions
+def create_new_playlist():
+    """Create a new playlist."""
+    try:
+        from PySide2.QtWidgets import QInputDialog
+        from datetime import datetime
+
+        name, ok = QInputDialog.getText(None, "New Playlist", "Enter playlist name:")
+        if ok and name:
+            # Generate new playlist ID
+            playlist_id = f"playlist_{len(timeline_playlist_data) + 1:03d}"
+
+            # Create new playlist data
+            new_playlist = {
+                "_id": playlist_id,
+                "name": name,
+                "project_id": "proj_001",  # Default project
+                "created_by": "user",
+                "created_at": datetime.now().isoformat() + "Z",
+                "updated_at": datetime.now().isoformat() + "Z",
+                "description": f"User created playlist: {name}",
+                "type": "user_created",
+                "status": "draft",
+                "settings": {
+                    "auto_play": True,
+                    "loop": False,
+                    "show_timecode": True,
+                    "default_track_height": 60,
+                    "timeline_zoom": 1.0,
+                    "color_coding_enabled": True
+                },
+                "clips": [],
+                "tracks": [
+                    {
+                        "track_id": 1,
+                        "name": "Video Track 1",
+                        "type": "video",
+                        "height": 60,
+                        "locked": False,
+                        "muted": False,
+                        "solo": False,
+                        "color": "#2d2d2d"
+                    }
+                ],
+                "metadata": {
+                    "total_duration": 0,
+                    "clip_count": 0,
+                    "departments": [],
+                    "sequences": [],
+                    "last_played_position": 0,
+                    "playback_settings": {
+                        "frame_rate": 24,
+                        "resolution": "1920x1080",
+                        "color_space": "Rec709"
+                    }
+                }
+            }
+
+            # Add to data and save
+            timeline_playlist_data.append(new_playlist)
+            save_timeline_playlist_data()
+            populate_playlist_tree()
+
+            print(f"Created new playlist: {name}")
+
+    except Exception as e:
+        print(f"Error creating new playlist: {e}")
+
+def duplicate_current_playlist():
+    """Duplicate the selected playlist."""
+    try:
+        if not current_playlist_id:
+            from PySide2.QtWidgets import QMessageBox
+            QMessageBox.warning(None, "Warning", "Please select a playlist to duplicate.")
+            return
+
+        # Find current playlist
+        current_playlist = None
+        for playlist in timeline_playlist_data:
+            if playlist["_id"] == current_playlist_id:
+                current_playlist = playlist
+                break
+
+        if not current_playlist:
+            return
+
+        # Create duplicate
+        from PySide2.QtWidgets import QInputDialog
+        from datetime import datetime
+
+        name, ok = QInputDialog.getText(
+            None, "Duplicate Playlist",
+            f"Enter name for duplicate of '{current_playlist['name']}':",
+            text=f"{current_playlist['name']} Copy"
+        )
+
+        if ok and name:
+            # Generate new ID
+            new_id = f"playlist_{len(timeline_playlist_data) + 1:03d}"
+
+            # Create duplicate
+            duplicate = current_playlist.copy()
+            duplicate["_id"] = new_id
+            duplicate["name"] = name
+            duplicate["created_at"] = datetime.now().isoformat() + "Z"
+            duplicate["updated_at"] = datetime.now().isoformat() + "Z"
+            duplicate["status"] = "draft"
+
+            # Add to data and save
+            timeline_playlist_data.append(duplicate)
+            save_timeline_playlist_data()
+            populate_playlist_tree()
+
+            print(f"Duplicated playlist: {name}")
+
+    except Exception as e:
+        print(f"Error duplicating playlist: {e}")
+
+def rename_current_playlist():
+    """Rename the selected playlist."""
+    try:
+        if not current_playlist_id:
+            from PySide2.QtWidgets import QMessageBox
+            QMessageBox.warning(None, "Warning", "Please select a playlist to rename.")
+            return
+
+        # Find current playlist
+        current_playlist = None
+        for playlist in timeline_playlist_data:
+            if playlist["_id"] == current_playlist_id:
+                current_playlist = playlist
+                break
+
+        if not current_playlist:
+            return
+
+        # Get new name
+        from PySide2.QtWidgets import QInputDialog
+        from datetime import datetime
+
+        name, ok = QInputDialog.getText(
+            None, "Rename Playlist",
+            "Enter new name:",
+            text=current_playlist["name"]
+        )
+
+        if ok and name:
+            current_playlist["name"] = name
+            current_playlist["updated_at"] = datetime.now().isoformat() + "Z"
+
+            save_timeline_playlist_data()
+            populate_playlist_tree()
+
+            # Update current playlist label
+            if timeline_playlist_dock and timeline_playlist_dock.widget():
+                widget = timeline_playlist_dock.widget()
+                widget.right_panel.current_playlist_label.setText(f"Playlist: {name}")
+
+            print(f"Renamed playlist to: {name}")
+
+    except Exception as e:
+        print(f"Error renaming playlist: {e}")
+
+def delete_current_playlist():
+    """Delete the selected playlist."""
+    try:
+        if not current_playlist_id:
+            from PySide2.QtWidgets import QMessageBox
+            QMessageBox.warning(None, "Warning", "Please select a playlist to delete.")
+            return
+
+        # Find current playlist
+        current_playlist = None
+        for i, playlist in enumerate(timeline_playlist_data):
+            if playlist["_id"] == current_playlist_id:
+                current_playlist = playlist
+                break
+
+        if not current_playlist:
+            return
+
+        # Confirm deletion
+        from PySide2.QtWidgets import QMessageBox
+
+        reply = QMessageBox.question(
+            None, "Delete Playlist",
+            f"Are you sure you want to delete playlist '{current_playlist['name']}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            timeline_playlist_data.remove(current_playlist)
+            save_timeline_playlist_data()
+            populate_playlist_tree()
+            clear_timeline_display()
+
+            print(f"Deleted playlist: {current_playlist['name']}")
+
+    except Exception as e:
+        print(f"Error deleting playlist: {e}")
+
+def show_add_media_dialog():
+    """Show dialog to add media to current playlist."""
+    try:
+        if not current_playlist_id:
+            from PySide2.QtWidgets import QMessageBox
+            QMessageBox.warning(None, "Warning", "Please select a playlist first.")
+            return
+
+        from PySide2.QtWidgets import QMessageBox
+        QMessageBox.information(
+            None, "Add Media",
+            "Right-click media items in the Media Grid to add them to the current playlist."
+        )
+
+    except Exception as e:
+        print(f"Error showing add media dialog: {e}")
+
+def refresh_timeline_playlists():
+    """Refresh playlist data from database."""
+    try:
+        load_timeline_playlist_data()
+        populate_playlist_tree()
+        print("Refreshed playlist data")
+    except Exception as e:
+        print(f"Error refreshing playlists: {e}")
+
+def play_current_playlist():
+    """Start timeline playback."""
+    try:
+        if current_playlist_id:
+            print(f"Playing playlist: {current_playlist_id}")
+            # TODO: Implement sequential playback of all clips
+        else:
+            print("No playlist selected for playback")
+    except Exception as e:
+        print(f"Error playing playlist: {e}")
+
+def stop_playlist_playback():
+    """Stop timeline playback."""
+    try:
+        print("Stopping playlist playback")
+        # TODO: Implement playback stop
+    except Exception as e:
+        print(f"Error stopping playback: {e}")
+
+def on_timeline_zoom_changed(zoom_text):
+    """Handle timeline zoom change."""
+    try:
+        print(f"Timeline zoom changed to: {zoom_text}")
+        # TODO: Implement timeline zoom functionality
+    except Exception as e:
+        print(f"Error changing zoom: {e}")
+
+def add_media_to_current_playlist(media_record):
+    """Add a media record to the current playlist."""
+    try:
+        if not current_playlist_id:
+            from PySide2.QtWidgets import QMessageBox
+            QMessageBox.warning(None, "Warning", "Please select a playlist first.")
+            return
+
+        # Find current playlist
+        current_playlist = None
+        for playlist in timeline_playlist_data:
+            if playlist["_id"] == current_playlist_id:
+                current_playlist = playlist
+                break
+
+        if not current_playlist:
+            return
+
+        # Create new clip
+        from datetime import datetime
+
+        clips = current_playlist.get("clips", [])
+
+        # Calculate position (add to end)
+        position = 0
+        if clips:
+            last_clip = max(clips, key=lambda x: x.get("position", 0) + x.get("duration", 0))
+            position = last_clip.get("position", 0) + last_clip.get("duration", 0)
+
+        # Extract department from filename or task
+        department = "unknown"
+        filename = media_record.get("file_name", "")
+        department_colors = {
+            "animation": "#1f4e79",
+            "lighting": "#d68910",
+            "compositing": "#196f3d",
+            "fx": "#6c3483",
+            "modeling": "#a93226",
+            "texturing": "#8b4513",
+            "rigging": "#2e8b57",
+            "layout": "#4682b4"
+        }
+
+        # Try to extract from filename
+        for dept in department_colors.keys():
+            if dept in filename.lower():
+                department = dept
+                break
+
+        # Create clip data
+        new_clip = {
+            "clip_id": f"clip_{len(clips) + 1:03d}",
+            "media_id": media_record["_id"],
+            "position": position,
+            "duration": media_record.get("metadata", {}).get("duration", 120),
+            "in_point": 0,
+            "out_point": media_record.get("metadata", {}).get("duration", 120),
+            "track": 1,
+            "department": department,
+            "sequence": extract_sequence_from_filename(filename),
+            "shot": extract_shot_from_filename(filename),
+            "version": media_record.get("version", "v001"),
+            "color": department_colors.get(department, "#666666"),
+            "notes": media_record.get("description", ""),
+            "added_at": datetime.now().isoformat() + "Z"
+        }
+
+        # Add clip to playlist
+        clips.append(new_clip)
+        current_playlist["clips"] = clips
+        current_playlist["updated_at"] = datetime.now().isoformat() + "Z"
+
+        # Update metadata
+        metadata = current_playlist.get("metadata", {})
+        metadata["clip_count"] = len(clips)
+        metadata["total_duration"] = sum(clip.get("duration", 0) for clip in clips)
+
+        # Update departments list
+        departments = set(clip.get("department") for clip in clips)
+        metadata["departments"] = list(departments)
+
+        current_playlist["metadata"] = metadata
+
+        # Save and refresh
+        save_timeline_playlist_data()
+
+        # Reload timeline if this playlist is currently selected
+        if current_playlist_id == current_playlist["_id"]:
+            load_playlist_timeline(current_playlist)
+
+        # Update tree to show new clip count
+        populate_playlist_tree()
+
+        print(f"Added media to playlist: {media_record.get('file_name')}")
+
+    except Exception as e:
+        print(f"Error adding media to playlist: {e}")
+
+def extract_sequence_from_filename(filename):
+    """Extract sequence from filename."""
+    import re
+    match = re.search(r'(seq\d+)', filename.lower())
+    return match.group(1) if match else "unknown"
+
+def extract_shot_from_filename(filename):
+    """Extract shot from filename."""
+    import re
+    match = re.search(r'(shot\d+)', filename.lower())
+    return match.group(1) if match else "unknown"
 
 def create_timeline_panel():
     """Create timeline panel with shot sequence and department management."""
@@ -2960,7 +3996,7 @@ def create_modular_media_browser():
             if timeline_playlist_panel:
                 print("Timeline Playlist feature enabled")
             else:
-                print("Timeline Playlist feature disabled (import failed)")
+                print("Timeline Playlist feature disabled (creation failed)")
 
         required_panels = [search_panel, media_grid_panel, comments_panel, timeline_panel]
         if not all(required_panels):
@@ -3001,6 +4037,9 @@ def create_modular_media_browser():
             timeline_playlist_dock_widget.setMinimumWidth(600)
             timeline_playlist_dock_widget.setMinimumHeight(400)
 
+            # Store global reference
+            globals()['timeline_playlist_dock'] = timeline_playlist_dock_widget
+
         # Add to RV
         rv_main_window.addDockWidget(Qt.LeftDockWidgetArea, search_dock)
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, comments_dock)
@@ -3018,7 +4057,8 @@ def create_modular_media_browser():
         globals()['comments_dock'] = comments_dock
         globals()['timeline_dock'] = timeline_dock
         globals()['media_grid_dock'] = media_grid_dock
-        globals()['timeline_playlist_dock'] = timeline_playlist_dock_widget
+        if timeline_playlist_dock_widget:
+            globals()['timeline_playlist_dock'] = timeline_playlist_dock_widget
         
         # Show panels
         search_dock.show()
@@ -3056,12 +4096,14 @@ if success:
     print("  - Real-time data from Horus database")
     print("  - Professional comment threading system")
     print("  - Timeline sequence visualization")
-    if ENABLE_TIMELINE_PLAYLIST and timeline_playlist_dock:
-        print("  - Timeline Playlist Manager (NEW!)")
-        print("    * Professional NLE-style interface")
-        print("    * Playlist creation and management")
-        print("    * Right-click media items to add to playlist")
-        print("    * Department-based color coding")
-        print("    * Drag-and-drop clip reordering")
+    if ENABLE_TIMELINE_PLAYLIST and 'timeline_playlist_dock' in globals() and timeline_playlist_dock:
+        print("  - Timeline Playlist Manager (INTEGRATED!)")
+        print("    * Professional NLE-style interface with left/right panels")
+        print("    * Playlist creation, duplication, rename, and deletion")
+        print("    * Right-click media items to add to current playlist")
+        print("    * Department-based color coding (Animation, Lighting, etc.)")
+        print("    * Timeline visualization with tracks and rulers")
+        print("    * Click timeline clips to load in Open RV")
+        print("    * Fully integrated with existing Horus three-panel system")
 else:
     print("Failed to create MediaBrowser")

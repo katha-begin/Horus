@@ -103,10 +103,8 @@ ENABLE_TIMELINE_PLAYLIST = True  # Set to False to disable
 ### File Structure
 ```
 Horus/
-├── horus_timeline_playlist_widget.py    # Main widget implementation
-├── rv_horus_integration.py              # Updated integration
+├── rv_horus_integration.py              # Main integration with Timeline Playlist
 ├── sample_db/horus_playlists.json       # Playlist database
-├── demo_timeline_playlist.py            # Standalone demo
 └── TIMELINE_PLAYLIST_FEATURE.md         # This documentation
 ```
 
@@ -114,15 +112,18 @@ Horus/
 
 ### In Open RV
 1. Launch Horus-RV: `python rv_horus_integration.py`
-2. Look for "Timeline Playlist Manager" dock widget
-3. Create new playlists or select existing ones
-4. Right-click media items in Media Grid to add to current playlist
-5. Click clips in timeline to load in Open RV
+2. Look for "Timeline Playlist Manager" dock widget (tabified with Timeline Sequence)
+3. Create new playlists using "New Playlist" button
+4. Select playlists from the tree to view timeline visualization
+5. Right-click media items in Media Grid to add to current playlist
+6. Click clips in timeline to load in Open RV
+7. Use playlist controls (Duplicate, Rename, Delete) for management
 
-### Standalone Demo
-```bash
-python demo_timeline_playlist.py
-```
+### Integration Features
+- **Seamless Integration**: Fully integrated into existing rv_horus_integration.py
+- **Feature Flag**: Can be enabled/disabled with ENABLE_TIMELINE_PLAYLIST
+- **No Standalone Mode**: Designed to work within the Horus-RV ecosystem
+- **Backward Compatibility**: Existing functionality remains unchanged
 
 ## Development
 
