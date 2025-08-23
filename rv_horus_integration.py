@@ -24,6 +24,15 @@ from media_browser.horus_data_connector import get_horus_connector
 
 print("Loading Open RV MediaBrowser with Horus integration...")
 
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller."""
+    try:
+        import sys
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 # Global references
 search_dock = None
 comments_dock = None
@@ -35,7 +44,8 @@ current_project_id = None
 annotations_popup_window = None
 
 # Feature flags
-ENABLE_TIMELINE_PLAYLIST = True  # Enable/disable Timeline Playlist feature
+ENABLE_TIMELINE_PLAYLIST = True   # Enable/disable Timeline Playlist feature
+ENABLE_LEGACY_TIMELINE = False    # Disable legacy Timeline Sequence panel
 
 # Timeline Playlist global data
 timeline_playlist_data = []
@@ -576,7 +586,9 @@ def create_timeline_playlist_panel():
 
         # Load initial data
         load_timeline_playlist_data()
-        populate_playlist_tree()
+
+        # Store widget reference for later population
+        widget._playlist_tree = left_panel.playlist_tree
 
         print("Timeline Playlist panel created successfully")
         return widget
@@ -589,6 +601,8 @@ def create_timeline_playlist_panel():
 
 def create_timeline_playlist_header():
     """Create header with title and main controls."""
+    from PySide2.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
+
     header = QFrame()
     header.setFixedHeight(40)
     header.setStyleSheet("""
@@ -692,7 +706,7 @@ def create_playlist_tree_panel():
 
     # Playlist controls
     controls = QFrame()
-    controls.setFixedHeight(80)
+    controls.setFixedHeight(56)  # Reduced by 30% (80 * 0.7 = 56)
     controls.setStyleSheet("""
         QFrame {
             background-color: #3a3a3a;
@@ -745,6 +759,7 @@ def create_playlist_tree_panel():
 def create_timeline_tracks_panel():
     """Create right panel with timeline tracks."""
     from PySide2.QtWidgets import QWidget, QVBoxLayout, QScrollArea, QLabel, QFrame, QHBoxLayout, QPushButton, QComboBox
+    from PySide2.QtCore import Qt
 
     panel = QWidget()
 
@@ -754,7 +769,7 @@ def create_timeline_tracks_panel():
 
     # Timeline header with controls
     timeline_header = QFrame()
-    timeline_header.setFixedHeight(35)
+    timeline_header.setFixedHeight(40)  # Original demo size - more spacious
     timeline_header.setStyleSheet("""
         QFrame {
             background-color: #2d2d2d;
@@ -862,18 +877,35 @@ def load_timeline_playlist_data():
         import json
         import os
 
-        # Load playlists
-        playlist_file = os.path.join("sample_db", "horus_playlists.json")
+        # Load playlists using resource path for bundled executable
+        playlist_file = os.path.join(get_resource_path("sample_db"), "horus_playlists.json")
+        print(f"Looking for playlist file at: {playlist_file}")
+
         if os.path.exists(playlist_file):
-            with open(playlist_file, 'r') as f:
+            with open(playlist_file, 'r', encoding='utf-8') as f:
                 timeline_playlist_data = json.load(f)
-                print(f"Loaded {len(timeline_playlist_data)} playlists")
+                print(f"✅ Loaded {len(timeline_playlist_data)} playlists from bundled resources")
+
+                # Print playlist names for verification
+                for playlist in timeline_playlist_data:
+                    clip_count = len(playlist.get('clips', []))
+                    metadata_count = playlist.get('metadata', {}).get('clip_count', 0)
+                    print(f"   - {playlist.get('name', 'Unnamed')} ({clip_count} clips, metadata: {metadata_count})")
         else:
-            timeline_playlist_data = []
-            print("No playlist file found, starting with empty playlists")
+            # Fallback to local file for development
+            local_playlist_file = os.path.join("sample_db", "horus_playlists.json")
+            if os.path.exists(local_playlist_file):
+                with open(local_playlist_file, 'r', encoding='utf-8') as f:
+                    timeline_playlist_data = json.load(f)
+                    print(f"✅ Loaded {len(timeline_playlist_data)} playlists from local file")
+            else:
+                timeline_playlist_data = []
+                print("⚠️  No playlist file found, starting with empty playlists")
 
     except Exception as e:
-        print(f"Error loading playlist data: {e}")
+        print(f"❌ Error loading playlist data: {e}")
+        import traceback
+        traceback.print_exc()
         timeline_playlist_data = []
 
 def save_timeline_playlist_data():
@@ -882,19 +914,32 @@ def save_timeline_playlist_data():
         import json
         import os
 
-        playlist_file = os.path.join("sample_db", "horus_playlists.json")
-        with open(playlist_file, 'w') as f:
-            json.dump(timeline_playlist_data, f, indent=2)
-        print("Playlist data saved")
+        # Try to save to bundled resource path first, fallback to local
+        try:
+            playlist_file = os.path.join(get_resource_path("sample_db"), "horus_playlists.json")
+            with open(playlist_file, 'w', encoding='utf-8') as f:
+                json.dump(timeline_playlist_data, f, indent=2)
+            print("✅ Playlist data saved to bundled resources")
+        except (OSError, PermissionError):
+            # Fallback to local file (bundled resources are read-only)
+            local_playlist_file = os.path.join("sample_db", "horus_playlists.json")
+            with open(local_playlist_file, 'w', encoding='utf-8') as f:
+                json.dump(timeline_playlist_data, f, indent=2)
+            print("✅ Playlist data saved to local file")
 
     except Exception as e:
-        print(f"Error saving playlist data: {e}")
+        print(f"❌ Error saving playlist data: {e}")
 
 def populate_playlist_tree():
     """Populate the playlist tree with data."""
     global timeline_playlist_dock
 
+    print(f"🌳 Populating playlist tree...")
+    print(f"   timeline_playlist_dock: {timeline_playlist_dock is not None}")
+    print(f"   timeline_playlist_data: {len(timeline_playlist_data) if timeline_playlist_data else 0} playlists")
+
     if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        print("❌ Timeline playlist dock not available for tree population")
         return
 
     try:
@@ -907,6 +952,7 @@ def populate_playlist_tree():
         playlist_tree.clear()
 
         if not timeline_playlist_data:
+            print("❌ No playlist data available")
             return
 
         # Group playlists by project
@@ -945,8 +991,12 @@ def populate_playlist_tree():
         # Expand all items
         playlist_tree.expandAll()
 
+        print(f"✅ Playlist tree populated with {len(timeline_playlist_data)} playlists across {len(projects)} projects")
+
     except Exception as e:
-        print(f"Error populating playlist tree: {e}")
+        print(f"❌ Error populating playlist tree: {e}")
+        import traceback
+        traceback.print_exc()
 
 def on_playlist_tree_selection_changed():
     """Handle playlist selection change."""
@@ -956,6 +1006,7 @@ def on_playlist_tree_selection_changed():
         return
 
     try:
+        from PySide2.QtCore import Qt
         widget = timeline_playlist_dock.widget()
         playlist_tree = widget.left_panel.playlist_tree
         selected_items = playlist_tree.selectedItems()
@@ -987,6 +1038,7 @@ def on_playlist_tree_selection_changed():
 def on_playlist_double_clicked(item, column):
     """Handle playlist double-click to start playback."""
     try:
+        from PySide2.QtCore import Qt
         item_data = item.data(0, Qt.UserRole)
         if item_data and item_data.get("type") == "playlist":
             play_current_playlist()
@@ -998,6 +1050,7 @@ def load_playlist_timeline(playlist_data):
     global timeline_playlist_dock
 
     if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        print("❌ Timeline playlist dock not available")
         return
 
     try:
@@ -1007,12 +1060,15 @@ def load_playlist_timeline(playlist_data):
         clips = playlist_data.get("clips", [])
         tracks = playlist_data.get("tracks", [])
 
+        print(f"🎬 Loading timeline for playlist: {playlist_data.get('name', 'Unknown')}")
+        print(f"   Clips: {len(clips)}, Tracks: {len(tracks)}")
+
         if not clips:
             # Show empty timeline message
             from PySide2.QtWidgets import QLabel
             from PySide2.QtCore import Qt
 
-            empty_label = QLabel("No clips in this playlist")
+            empty_label = QLabel("No clips in this playlist\nRight-click media items to add them")
             empty_label.setStyleSheet("""
                 QLabel {
                     color: #888888;
@@ -1023,22 +1079,29 @@ def load_playlist_timeline(playlist_data):
             """)
             empty_label.setAlignment(Qt.AlignCenter)
             widget.right_panel.timeline_layout.addWidget(empty_label)
+            print("   Empty playlist - showing message")
             return
 
         # Create timeline ruler
         ruler = create_timeline_ruler(clips)
         widget.right_panel.timeline_layout.addWidget(ruler)
+        print("   ✅ Timeline ruler created")
 
         # Create tracks
         for track in tracks:
             track_widget = create_timeline_track_widget(track, clips)
             widget.right_panel.timeline_layout.addWidget(track_widget)
+            print(f"   ✅ Track created: {track.get('name', 'Unknown')}")
 
         # Add stretch to push tracks to top
         widget.right_panel.timeline_layout.addStretch()
 
+        print(f"   ✅ Timeline loaded successfully")
+
     except Exception as e:
-        print(f"Error loading playlist timeline: {e}")
+        print(f"❌ Error loading playlist timeline: {e}")
+        import traceback
+        traceback.print_exc()
 
 def clear_timeline_display():
     """Clear the timeline display."""
@@ -1063,9 +1126,10 @@ def clear_timeline_display():
 def create_timeline_ruler(clips):
     """Create timeline ruler with timecode markers."""
     from PySide2.QtWidgets import QFrame, QHBoxLayout, QLabel
+    from PySide2.QtCore import Qt
 
     ruler = QFrame()
-    ruler.setFixedHeight(25)
+    ruler.setFixedHeight(25)  # Legacy timeline size - compact proportions
     ruler.setStyleSheet("""
         QFrame {
             background-color: #1e1e1e;
@@ -1079,7 +1143,7 @@ def create_timeline_ruler(clips):
     """)
 
     layout = QHBoxLayout(ruler)
-    layout.setContentsMargins(60, 0, 0, 0)  # Offset for track labels
+    layout.setContentsMargins(80, 0, 0, 0)  # Offset for track labels (matches professional label width)
     layout.setSpacing(0)
 
     # Calculate total duration
@@ -1097,7 +1161,7 @@ def create_timeline_ruler(clips):
 
             timecode = f"{minutes:02d}:{secs:02d}:{frames:02d}"
             marker = QLabel(timecode)
-            marker.setFixedWidth(60)
+            marker.setFixedWidth(150)  # Original demo size - better proportions
             marker.setAlignment(Qt.AlignCenter)
             layout.addWidget(marker)
 
@@ -1110,7 +1174,8 @@ def create_timeline_track_widget(track_data, clips):
     from PySide2.QtCore import Qt
 
     track = QFrame()
-    track.setFixedHeight(track_data.get("height", 60))
+    track_height = track_data.get("height", 45)  # Legacy timeline size - compact and professional
+    track.setFixedHeight(track_height)
     track.setStyleSheet("""
         QFrame {
             background-color: #2d2d2d;
@@ -1124,12 +1189,12 @@ def create_timeline_track_widget(track_data, clips):
 
     # Track label
     track_label = QLabel(track_data.get("name", "Track"))
-    track_label.setFixedWidth(60)
+    track_label.setFixedSize(80, 45)  # Legacy timeline proportions - match track height
     track_label.setStyleSheet("""
         QLabel {
             background-color: #3a3a3a;
             color: #e0e0e0;
-            padding: 5px;
+            padding: 0px;
             border-right: 1px solid #555555;
             font-size: 11px;
             font-weight: bold;
@@ -1140,9 +1205,12 @@ def create_timeline_track_widget(track_data, clips):
 
     # Clips area
     clips_area = QWidget()
+    clips_area.setFixedHeight(track_height)  # Force clips area to match track height
     clips_layout = QHBoxLayout(clips_area)
-    clips_layout.setContentsMargins(0, 0, 0, 0)
-    clips_layout.setSpacing(1)
+    clips_layout.setContentsMargins(0, 0, 0, 0)  # No margins - let clips fill full track height
+    clips_layout.setSpacing(0)  # Legacy timeline spacing - no gaps
+    clips_layout.setAlignment(Qt.AlignVCenter)  # Center clips vertically in the track
+    print(f"🔧 DEBUG: Clips area height set to {track_height}px with vertical centering")
 
     # Filter clips for this track
     track_clips = [clip for clip in clips if clip.get("track") == track_data.get("track_id")]
@@ -1168,13 +1236,13 @@ def create_timeline_track_widget(track_data, clips):
 
         # Add gap if needed
         if clip_position > current_position:
-            gap_width = max(1, (clip_position - current_position) * 2)  # 2 pixels per frame
+            gap_width = max(1, (clip_position - current_position) * 1)  # Minimal gaps like legacy timeline
             gap = QWidget()
             gap.setFixedWidth(gap_width)
             clips_layout.addWidget(gap)
 
         # Create clip widget
-        clip_widget = create_timeline_clip_widget(clip, department_colors)
+        clip_widget = create_timeline_clip_widget(clip, department_colors, track_height)
         clips_layout.addWidget(clip_widget)
 
         current_position = clip_position + clip_duration
@@ -1184,58 +1252,69 @@ def create_timeline_track_widget(track_data, clips):
 
     return track
 
-def create_timeline_clip_widget(clip_data, department_colors):
-    """Create a timeline clip widget."""
-    from PySide2.QtWidgets import QPushButton
+def create_timeline_clip_widget(clip_data, department_colors, track_height=45):
+    """Create a timeline clip widget using exact legacy timeline approach."""
+    from PySide2.QtWidgets import QLabel
+    from PySide2.QtCore import Qt
+
+    print(f"🔧 DEBUG: create_timeline_clip_widget called with track_height={track_height}")
 
     duration = clip_data.get("duration", 0)
     department = clip_data.get("department", "unknown")
 
-    # Calculate width based on duration (2 pixels per frame)
-    width = max(40, duration * 2)
+    # Use full track height to fill entire area
+    width = 120
+    clip_height = track_height  # Fill entire track height (45px)
 
-    clip = QPushButton()
-    clip.setFixedSize(width, 50)
-    clip.setToolTip(f"{clip_data.get('sequence', '')}/{clip_data.get('shot', '')} - {clip_data.get('version', '')}")
+    # Get shot info like legacy timeline
+    shot_name = clip_data.get("shot", "")
+    version = clip_data.get("version", "v001")
+
+    # Create QLabel like legacy timeline (not QPushButton)
+    clip = QLabel(f"{shot_name}\n{version}")
+    clip.setFixedSize(width, clip_height)  # Exact legacy timeline sizing
+    print(f"🔧 DEBUG: Created clip {shot_name} with size {width}x{clip_height}px")
 
     # Get department color
     color = department_colors.get(department, "#666666")
 
+    # Use exact legacy timeline styling
     clip.setStyleSheet(f"""
-        QPushButton {{
+        QLabel {{
             background-color: {color};
-            color: white;
-            border: 1px solid #555555;
-            border-radius: 3px;
+            color: #ffffff;
             font-size: 9px;
             font-weight: bold;
-            text-align: left;
+            border: 1px solid rgba(255, 255, 255, 0.2);
             padding: 2px;
-        }}
-        QPushButton:hover {{
-            border-color: #ffffff;
-            background-color: {color}dd;
-        }}
-        QPushButton:pressed {{
-            background-color: {color}aa;
+            margin: 0px;
         }}
     """)
+    clip.setAlignment(Qt.AlignCenter)
+    clip.setToolTip(f"{clip_data.get('sequence', '')}/{clip_data.get('shot', '')} - {clip_data.get('version', '')}")
 
-    # Set clip text
-    shot_name = f"{clip_data.get('shot', 'shot')}"
-    version = clip_data.get('version', 'v001')
-    clip.setText(f"{shot_name}\n{version}")
-
-    # Connect click handler
-    clip.clicked.connect(lambda: on_timeline_clip_clicked(clip_data))
+    # Add click handler (QLabel needs mouse events)
+    clip.mousePressEvent = lambda event: on_timeline_clip_clicked(clip_data)
 
     return clip
 
 def on_timeline_clip_clicked(clip_data):
     """Handle clip click to load in Open RV."""
     try:
-        # Find media record for this clip
+        # Try to get file path directly from clip data first
+        file_path = clip_data.get("file_path", "")
+
+        if file_path:
+            # Load in RV
+            import rv.commands as rvc
+            rvc.addSource(file_path)
+            print(f"✅ Loading clip from playlist: {file_path}")
+            print(f"   Shot: {clip_data.get('sequence', '')}/{clip_data.get('shot', '')} {clip_data.get('version', '')}")
+            return
+
+        # Fallback: Find media record for this clip
         media_id = clip_data.get("media_id")
+        print(f"🔍 Looking for media record: {media_id}")
 
         # Get media records from Horus connector
         if horus_connector:
@@ -1253,11 +1332,11 @@ def on_timeline_clip_clicked(clip_data):
                     # Load in RV
                     import rv.commands as rvc
                     rvc.addSource(file_path)
-                    print(f"Loading clip from playlist: {file_path}")
+                    print(f"✅ Loading clip from media record: {file_path}")
                 else:
-                    print(f"No file path for clip: {media_id}")
+                    print(f"❌ No file path for clip: {media_id}")
             else:
-                print(f"Media record not found: {media_id}")
+                print(f"❌ Media record not found: {media_id}")
         else:
             print("Horus connector not available")
 
@@ -1583,7 +1662,8 @@ def add_media_to_current_playlist(media_record):
             "version": media_record.get("version", "v001"),
             "color": department_colors.get(department, "#666666"),
             "notes": media_record.get("description", ""),
-            "added_at": datetime.now().isoformat() + "Z"
+            "added_at": datetime.now().isoformat() + "Z",
+            "file_path": media_record.get("file_path", "")
         }
 
         # Add clip to playlist
@@ -1612,22 +1692,49 @@ def add_media_to_current_playlist(media_record):
         # Update tree to show new clip count
         populate_playlist_tree()
 
-        print(f"Added media to playlist: {media_record.get('file_name')}")
+        from PySide2.QtWidgets import QMessageBox
+        QMessageBox.information(
+            None, "Added to Playlist",
+            f"Added '{media_record.get('file_name', 'Unknown')}' to playlist '{current_playlist.get('name', 'Unknown')}'"
+        )
+
+        print(f"✅ Added media to playlist: {media_record.get('file_name')}")
+        print(f"   Playlist: {current_playlist.get('name')}")
+        print(f"   Department: {department}")
+        print(f"   Sequence/Shot: {extract_sequence_from_filename(filename)}/{extract_shot_from_filename(filename)}")
 
     except Exception as e:
-        print(f"Error adding media to playlist: {e}")
+        print(f"❌ Error adding media to playlist: {e}")
+        import traceback
+        traceback.print_exc()
 
 def extract_sequence_from_filename(filename):
     """Extract sequence from filename."""
     import re
-    match = re.search(r'(seq\d+)', filename.lower())
-    return match.group(1) if match else "unknown"
+    # Look for sq0010, seq010, sequence010 patterns
+    match = re.search(r'(sq\d+|seq\d+|sequence\d+)', filename.lower())
+    if match:
+        seq = match.group(1)
+        # Normalize to sq#### format
+        if seq.startswith('seq'):
+            seq = 'sq' + seq[3:]
+        elif seq.startswith('sequence'):
+            seq = 'sq' + seq[8:]
+        return seq
+    return "sq0000"
 
 def extract_shot_from_filename(filename):
     """Extract shot from filename."""
     import re
-    match = re.search(r'(shot\d+)', filename.lower())
-    return match.group(1) if match else "unknown"
+    # Look for sh0010, shot010, shot0010 patterns
+    match = re.search(r'(sh\d+|shot\d+)', filename.lower())
+    if match:
+        shot = match.group(1)
+        # Normalize to sh#### format
+        if shot.startswith('shot'):
+            shot = 'sh' + shot[4:]
+        return shot
+    return "sh0000"
 
 def create_timeline_panel():
     """Create timeline panel with shot sequence and department management."""
@@ -2887,7 +2994,7 @@ def update_timeline_display(timeline_widget, shots_data):
         grid_layout.setContentsMargins(0, 0, 0, 0)
 
         # Add timeline ruler at top (like NLE)
-        ruler_frame = create_timeline_ruler(shot_keys, TRACK_LABEL_WIDTH)
+        ruler_frame = create_legacy_timeline_ruler(shot_keys, TRACK_LABEL_WIDTH)
         grid_layout.addWidget(ruler_frame, 0, 0)
 
         # Create timeline tracks like NLE
@@ -3006,8 +3113,8 @@ def create_nle_track_row(department, shot_keys, dept_shots_data, track_height, l
         print(f"Error creating NLE track row: {e}")
         return QFrame()
 
-def create_timeline_ruler(shot_keys, label_width):
-    """Create timeline ruler like NLE applications."""
+def create_legacy_timeline_ruler(shot_keys, label_width):
+    """Create timeline ruler like NLE applications (legacy)."""
     try:
         from PySide2.QtWidgets import QFrame, QHBoxLayout, QLabel
         from PySide2.QtCore import Qt
@@ -3550,19 +3657,7 @@ def create_shot_clip_with_name(shot_key, department, shot_data, clip_width, clip
         print(f"Error creating shot clip with name: {e}")
         return QPushButton("Error")
 
-def clear_timeline_display(timeline_widget):
-    """Clear the current timeline grid display."""
-    try:
-        grid_layout = timeline_widget.timeline_grid_layout
-
-        # Clear all widgets from grid layout
-        while grid_layout.count():
-            child = grid_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-    except Exception as e:
-        print(f"Error clearing timeline display: {e}")
+# Legacy timeline function removed - using playlist timeline version
 
 def on_timeline_filter_changed():
     """Handle timeline filter changes."""
@@ -3986,25 +4081,42 @@ def create_modular_media_browser():
         media_grid_panel = create_media_grid_panel()
         comments_panel = create_comments_panel()
 
-        # Create timeline panel with shot sequence functionality
-        timeline_panel = create_timeline_panel()
-
-        # Create Timeline Playlist panel (optional)
+        # Create timeline panels based on feature flags
+        timeline_panel = None
         timeline_playlist_panel = None
+
         if ENABLE_TIMELINE_PLAYLIST:
+            # Create new Timeline Playlist Manager as primary timeline interface
             timeline_playlist_panel = create_timeline_playlist_panel()
             if timeline_playlist_panel:
-                print("Timeline Playlist feature enabled")
+                print("✅ Timeline Playlist Manager enabled (primary timeline interface)")
             else:
-                print("Timeline Playlist feature disabled (creation failed)")
+                print("❌ Timeline Playlist Manager creation failed")
+                # Fallback to legacy timeline if playlist creation fails
+                if ENABLE_LEGACY_TIMELINE:
+                    timeline_panel = create_timeline_panel()
+                    print("⚠️  Fallback to legacy Timeline Sequence panel")
+        elif ENABLE_LEGACY_TIMELINE:
+            # Create legacy timeline panel only if explicitly enabled
+            timeline_panel = create_timeline_panel()
+            print("✅ Legacy Timeline Sequence panel enabled")
+        else:
+            print("⚠️  No timeline interface enabled")
 
-        required_panels = [search_panel, media_grid_panel, comments_panel, timeline_panel]
+        # Validate required panels (timeline panels are optional based on feature flags)
+        required_panels = [search_panel, media_grid_panel, comments_panel]
         if not all(required_panels):
-            print("Failed to create required panels")
+            print("❌ Failed to create required panels")
             return False
-        
-        # Apply styling
-        for panel in [search_panel, media_grid_panel, comments_panel, timeline_panel]:
+
+        # Apply styling to all created panels
+        panels_to_style = [search_panel, media_grid_panel, comments_panel]
+        if timeline_panel:
+            panels_to_style.append(timeline_panel)
+        if timeline_playlist_panel:
+            panels_to_style.append(timeline_playlist_panel)
+
+        for panel in panels_to_style:
             apply_rv_styling(panel)
         
         # Create dock widgets
@@ -4020,57 +4132,86 @@ def create_modular_media_browser():
         comments_dock.setMaximumWidth(16777215)  # No maximum width constraint
         comments_dock.resize(340, 600)  # Default size
 
-        timeline_dock = QDockWidget("Timeline Sequence", rv_main_window)
-        timeline_dock.setWidget(timeline_panel)
-        timeline_dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
-
         media_grid_dock = QDockWidget("Media Grid - Horus", rv_main_window)
         media_grid_dock.setWidget(media_grid_panel)
         media_grid_dock.setAllowedAreas(Qt.AllDockWidgetAreas)
 
-        # Create Timeline Playlist dock if available
+        # Create timeline docks based on feature flags
+        timeline_dock_widget = None
         timeline_playlist_dock_widget = None
+
+        if timeline_panel:
+            timeline_dock_widget = QDockWidget("Timeline Sequence (Legacy)", rv_main_window)
+            timeline_dock_widget.setWidget(timeline_panel)
+            timeline_dock_widget.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
+            globals()['timeline_dock'] = timeline_dock_widget
+
         if timeline_playlist_panel:
             timeline_playlist_dock_widget = QDockWidget("Timeline Playlist Manager", rv_main_window)
             timeline_playlist_dock_widget.setWidget(timeline_playlist_panel)
             timeline_playlist_dock_widget.setAllowedAreas(Qt.AllDockWidgetAreas)
-            timeline_playlist_dock_widget.setMinimumWidth(600)
-            timeline_playlist_dock_widget.setMinimumHeight(400)
-
-            # Store global reference
+            timeline_playlist_dock_widget.setMinimumWidth(800)  # Larger minimum for primary interface
+            timeline_playlist_dock_widget.setMinimumHeight(350)  # Reduced by 30% (500 * 0.7 = 350)
             globals()['timeline_playlist_dock'] = timeline_playlist_dock_widget
 
-        # Add to RV
+            # Now populate the playlist tree since the global dock is set
+            populate_playlist_tree()
+            print("✅ Playlist tree populated with existing playlists")
+
+        # Add dock widgets to RV main window
         rv_main_window.addDockWidget(Qt.LeftDockWidgetArea, search_dock)
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, comments_dock)
-        rv_main_window.addDockWidget(Qt.BottomDockWidgetArea, timeline_dock)
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, media_grid_dock)
 
-        # Add Timeline Playlist dock if available
+        # Add timeline docks based on what was created
         if timeline_playlist_dock_widget:
+            # Timeline Playlist Manager as primary timeline interface
             rv_main_window.addDockWidget(Qt.BottomDockWidgetArea, timeline_playlist_dock_widget)
-            # Tabify with timeline dock for better space usage
-            rv_main_window.tabifyDockWidget(timeline_dock, timeline_playlist_dock_widget)
+            print("✅ Timeline Playlist Manager added as primary timeline interface")
+
+        if timeline_dock_widget:
+            # Legacy timeline dock (only if enabled and no playlist manager)
+            if timeline_playlist_dock_widget:
+                # If both exist, tabify legacy timeline with playlist manager
+                rv_main_window.addDockWidget(Qt.BottomDockWidgetArea, timeline_dock_widget)
+                rv_main_window.tabifyDockWidget(timeline_playlist_dock_widget, timeline_dock_widget)
+                # Ensure playlist manager is the active tab
+                timeline_playlist_dock_widget.raise_()
+                print("✅ Legacy timeline added as secondary tab")
+            else:
+                # Legacy timeline as primary if no playlist manager
+                rv_main_window.addDockWidget(Qt.BottomDockWidgetArea, timeline_dock_widget)
+                print("✅ Legacy timeline added as primary timeline interface")
 
         # Store global references for access from other functions
         globals()['search_dock'] = search_dock
         globals()['comments_dock'] = comments_dock
-        globals()['timeline_dock'] = timeline_dock
         globals()['media_grid_dock'] = media_grid_dock
+
+        # Store timeline references based on what was created
+        if timeline_dock_widget:
+            globals()['timeline_dock'] = timeline_dock_widget
         if timeline_playlist_dock_widget:
             globals()['timeline_playlist_dock'] = timeline_playlist_dock_widget
-        
-        # Show panels
+
+        # Show core panels
         search_dock.show()
         comments_dock.show()
-        timeline_dock.show()
         media_grid_dock.show()
 
-        # Show Timeline Playlist if available
+        # Show timeline panels based on priority
         if timeline_playlist_dock_widget:
             timeline_playlist_dock_widget.show()
-            # Bring timeline dock to front initially
-            timeline_dock.raise_()
+            timeline_playlist_dock_widget.raise_()  # Bring to front as primary interface
+            print("✅ Timeline Playlist Manager displayed as primary timeline")
+
+        if timeline_dock_widget:
+            timeline_dock_widget.show()
+            if not timeline_playlist_dock_widget:
+                timeline_dock_widget.raise_()  # Only bring to front if no playlist manager
+                print("✅ Legacy timeline displayed")
+            else:
+                print("✅ Legacy timeline available as secondary tab")
         
         # Setup Horus integration
         setup_horus_integration()
@@ -4088,22 +4229,37 @@ def create_modular_media_browser():
 success = create_modular_media_browser()
 
 if success:
-    print("SUCCESS: Open RV MediaBrowser with Horus integration!")
-    print("Features:")
-    print("  - Project selection in Search panel")
-    print("  - Media grid with Horus metadata")
-    print("  - Click media items to load in RV")
-    print("  - Real-time data from Horus database")
-    print("  - Professional comment threading system")
-    print("  - Timeline sequence visualization")
+    print("🎉 SUCCESS: Open RV MediaBrowser with Horus integration!")
+    print("📋 Core Features:")
+    print("  ✅ Project selection in Search panel")
+    print("  ✅ Media grid with Horus metadata")
+    print("  ✅ Click media items to load in RV")
+    print("  ✅ Real-time data from Horus database")
+    print("  ✅ Professional comment threading system")
+
+    # Timeline interface status
     if ENABLE_TIMELINE_PLAYLIST and 'timeline_playlist_dock' in globals() and timeline_playlist_dock:
-        print("  - Timeline Playlist Manager (INTEGRATED!)")
-        print("    * Professional NLE-style interface with left/right panels")
-        print("    * Playlist creation, duplication, rename, and deletion")
-        print("    * Right-click media items to add to current playlist")
-        print("    * Department-based color coding (Animation, Lighting, etc.)")
+        print("🎬 PRIMARY TIMELINE INTERFACE:")
+        print("  ✅ Timeline Playlist Manager (NLE-Style)")
+        print("    * Professional left/right panel layout")
+        print("    * Playlist creation, duplication, rename, deletion")
+        print("    * Department-based color coding")
         print("    * Timeline visualization with tracks and rulers")
         print("    * Click timeline clips to load in Open RV")
-        print("    * Fully integrated with existing Horus three-panel system")
+        print("    * Integrated with Horus three-panel system")
+
+        if ENABLE_LEGACY_TIMELINE and 'timeline_dock' in globals() and timeline_dock:
+            print("  📝 Legacy Timeline Sequence (Secondary Tab)")
+        else:
+            print("  📝 Legacy Timeline Sequence (Disabled)")
+
+    elif ENABLE_LEGACY_TIMELINE and 'timeline_dock' in globals() and timeline_dock:
+        print("🎬 TIMELINE INTERFACE:")
+        print("  ✅ Legacy Timeline Sequence (Primary)")
+        print("  📝 Timeline Playlist Manager (Disabled)")
+    else:
+        print("⚠️  No timeline interface enabled")
+
+    print("\n🚀 Timeline Playlist Manager is now the primary timeline interface!")
 else:
-    print("Failed to create MediaBrowser")
+    print("❌ Failed to create MediaBrowser")

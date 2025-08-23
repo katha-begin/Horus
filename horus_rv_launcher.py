@@ -20,6 +20,17 @@ import subprocess
 from pathlib import Path
 
 
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller."""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+
 def find_openrv_executable():
     """Find Open RV executable."""
     possible_paths = [
@@ -127,20 +138,89 @@ def main():
         # Change to project directory
         os.chdir(project_dir)
         
-        # Build command
-        python_code = "exec(open('rv_horus_integration.py').read())"
-        cmd = [rv_exe, "-pyeval", python_code]
+        # Build command with integration code using temporary file approach
+        # Try to read from bundled resources first (for executable)
+        try:
+            integration_script_path = get_resource_path("rv_horus_integration.py")
+            if os.path.exists(integration_script_path):
+                with open(integration_script_path, 'r', encoding='utf-8') as f:
+                    integration_code = f.read()
+                print(f"✅ Loaded integration script from bundled resources")
+            else:
+                # Fallback to local file (for development)
+                local_script_path = os.path.join(project_dir, "rv_horus_integration.py")
+                if os.path.exists(local_script_path):
+                    with open(local_script_path, 'r', encoding='utf-8') as f:
+                        integration_code = f.read()
+                    print(f"✅ Loaded integration script from local file")
+                else:
+                    raise FileNotFoundError("Integration script not found")
+
+            # Modify the integration code to use bundled resources
+            integration_code = update_integration_paths(integration_code)
+
+            # Create temporary file to avoid command line length limits
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as temp_file:
+                temp_file.write(integration_code)
+                temp_script_path = temp_file.name
+
+            print(f"✅ Created temporary script: {temp_script_path}")
+            print(f"   Script size: {len(integration_code)} characters")
+
+            # Verify the script has all necessary functions
+            required_functions = [
+                'create_search_panel', 'create_media_grid_panel', 'create_comments_panel',
+                'create_timeline_panel', 'create_timeline_playlist_panel',
+                'load_timeline_playlist_data', 'populate_playlist_tree', 'create_new_playlist'
+            ]
+            missing_functions = []
+            for func in required_functions:
+                if f"def {func}(" not in integration_code:
+                    missing_functions.append(func)
+
+            if missing_functions:
+                print(f"⚠️  WARNING: Missing functions in integration script:")
+                for func in missing_functions:
+                    print(f"   - {func}")
+                print("   This may cause UI panels to not load properly")
+            else:
+                print(f"✅ All required functions found in integration script")
+
+            # Check for Timeline Playlist feature flag
+            if "ENABLE_TIMELINE_PLAYLIST = True" in integration_code:
+                print(f"✅ Timeline Playlist feature is enabled")
+            else:
+                print(f"⚠️  Timeline Playlist feature flag not found or disabled")
+
+        except Exception as e:
+            print(f"❌ ERROR: Could not load integration script: {e}")
+            print("   Please ensure rv_horus_integration.py is available")
+            input("Press Enter to exit...")
+            return 1
+
+        cmd = [rv_exe, "-pyeval", f"exec(open(r'{temp_script_path}', encoding='utf-8').read())"]
         
         # Launch Open RV
         print(f"Executing: {' '.join(cmd)}")
         print()
         
         # Run the command
-        result = subprocess.run(cmd, cwd=project_dir)
-        
+        try:
+            result = subprocess.run(cmd, cwd=project_dir)
+            return_code = result.returncode
+        finally:
+            # Clean up temporary file
+            try:
+                if 'temp_script_path' in locals():
+                    os.unlink(temp_script_path)
+                    print(f"✅ Cleaned up temporary script")
+            except Exception as cleanup_error:
+                print(f"Warning: Could not clean up temporary file: {cleanup_error}")
+
         print()
         print("🎬 Open RV session ended")
-        return result.returncode
+        return return_code
         
     except KeyboardInterrupt:
         print()
@@ -152,6 +232,72 @@ def main():
         print()
         input("Press Enter to exit...")
         return 1
+
+
+def update_integration_paths(integration_code):
+    """Update file paths in integration code to use bundled resources."""
+    # Replace relative paths with resource paths for bundled files
+    updated_code = integration_code
+
+    # Update sample_db paths to use bundled resources
+    sample_db_path = get_resource_path("sample_db").replace("\\", "/")
+    updated_code = updated_code.replace(
+        'os.path.join("sample_db"',
+        f'os.path.join(r"{sample_db_path}"'
+    )
+
+    # Update src/packages paths to use bundled resources
+    src_path = get_resource_path("src").replace("\\", "/")
+    updated_code = updated_code.replace(
+        'os.path.join(project_root, \'src\', \'packages\'',
+        f'os.path.join(r"{src_path}", "packages"'
+    )
+
+    # Fix any remaining path issues with raw strings
+    updated_code = updated_code.replace(
+        'media_browser_path = os.path.join(',
+        'media_browser_path = os.path.join('
+    )
+
+    # Add resource path function to the integration code
+    resource_function = '''
+def get_resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller."""
+    try:
+        import sys
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+'''
+
+    # Insert the resource function at the beginning after imports
+    import_end = updated_code.find('\n\n# Global references')
+    if import_end != -1:
+        updated_code = updated_code[:import_end] + '\n' + resource_function + updated_code[import_end:]
+
+    # Fix the specific media_browser_path line that's causing syntax error
+    import re
+    updated_code = re.sub(
+        r'media_browser_path = os\.path\.join\("([^"]+)"',
+        lambda m: f'media_browser_path = os.path.join(r"{m.group(1).replace(chr(92), "/")}"',
+        updated_code
+    )
+
+    return updated_code
+
+
+def get_embedded_integration_code():
+    """Get embedded integration code for executable distribution."""
+    # This will be populated with the actual rv_horus_integration.py content
+    # when building the executable
+    return '''
+# Embedded Horus-RV Integration Code
+print("Loading embedded Horus-RV integration...")
+print("ERROR: Integration code not properly embedded!")
+print("Please ensure the build process includes rv_horus_integration.py")
+'''
 
 
 if __name__ == "__main__":
