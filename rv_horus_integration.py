@@ -6,6 +6,8 @@ Open RV MediaBrowser with Horus Integration
 
 Integrates our modular MediaBrowser dock widgets with Horus's JSON database
 to display media data from the Horus application within Open RV.
+
+This file serves as the main orchestration layer for the modular Horus components.
 """
 
 import sys
@@ -16,86 +18,33 @@ try:
     project_root = os.getcwd()
     media_browser_path = os.path.join(project_root, 'src', 'packages', 'media_browser', 'python')
     sys.path.insert(0, media_browser_path)
+
+    # Add path for Horus modular components
+    horus_path = os.path.join(project_root, 'horus')
+    sys.path.insert(0, horus_path)
 except:
     pass
 
 # Import Horus data connector
 from media_browser.horus_data_connector import get_horus_connector
 
+# Import modular Horus components
+from horus.utils.globals import *
+from horus.utils.resource_utils import get_resource_path
+from horus.media_browser.search_panel import create_search_panel
+from horus.media_browser.media_grid_panel import create_media_grid_panel
+from horus.comments.comments_panel import create_comments_panel
+from horus.timeline_playlist.timeline_playlist_panel import create_timeline_playlist_panel
+from horus.timeline_playlist.legacy_timeline_panel import create_timeline_panel
+from horus.database.horus_integration import setup_horus_integration
+from horus.ui_components.styling import apply_rv_styling
+
 print("Loading Open RV MediaBrowser with Horus integration...")
 
-def get_resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller."""
-    try:
-        import sys
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
-# Global references
-search_dock = None
-comments_dock = None
-timeline_dock = None
-media_grid_dock = None
-timeline_playlist_dock = None  # New Timeline Playlist Widget
-horus_connector = None
-current_project_id = None
-annotations_popup_window = None
-
-# Feature flags
-ENABLE_TIMELINE_PLAYLIST = True   # Enable/disable Timeline Playlist feature
-ENABLE_LEGACY_TIMELINE = False    # Disable legacy Timeline Sequence panel
-
-# Timeline Playlist global data
-timeline_playlist_data = []
-current_playlist_id = None
-
-def create_comments_panel():
-    """Create comments and annotations panel."""
-    try:
-        from PySide2.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
-                                       QLabel, QPushButton, QFrame, QListWidget,
-                                       QListWidgetItem, QSplitter, QLineEdit,
-                                       QComboBox, QScrollArea, QGroupBox)
-        from PySide2.QtCore import Qt, QTimer
-
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(5, 5, 5, 5)
-
-        # Clean header matching reference design
-        header_frame = QFrame()
-        header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(5, 5, 5, 5)
-
-        # Comments title with count
-        comments_title = QLabel("Comments (23)")
-        comments_title.setStyleSheet("font-weight: bold; color: #e0e0e0; font-size: 14px;")
-        header_layout.addWidget(comments_title)
-
-        header_layout.addStretch()
-
-        # Frame info display (compact)
-        frame_info_label = QLabel("Frame: --")
-        frame_info_label.setObjectName("frame_info_label")
-        frame_info_label.setStyleSheet("color: #888888; font-size: 10px;")
-        header_layout.addWidget(frame_info_label)
-
-        # Essential action buttons
-        rv_paint_btn = QPushButton("Paint")
-        rv_paint_btn.setObjectName("rv_paint_btn")
-        rv_paint_btn.setMaximumWidth(50)
-        rv_paint_btn.setStyleSheet("font-size: 10px; padding: 2px 4px;")
-        header_layout.addWidget(rv_paint_btn)
-
-        annotations_popup_btn = QPushButton("Annotations")
-        annotations_popup_btn.setObjectName("annotations_popup_btn")
-        annotations_popup_btn.setMaximumWidth(70)
-        annotations_popup_btn.setStyleSheet("font-size: 10px; padding: 2px 4px;")
-        header_layout.addWidget(annotations_popup_btn)
-
-        layout.addWidget(header_frame)
+# Main orchestration function - delegates to modular components
+def create_modular_media_browser():
+    """Create modular dock widgets with Horus integration."""
+    global search_dock, comments_dock, timeline_dock, media_grid_dock
 
         # Dynamic comments area - scales with panel height
         comments_scroll = QScrollArea()
