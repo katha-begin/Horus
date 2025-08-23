@@ -1,0 +1,184 @@
+[
+  {
+    "_id": "playlist_001",
+    "name": "Episode 01 - Animation Review",
+    "project_id": "proj_001",
+    "created_by": "john.supervisor",
+    "created_at": "2025-01-23T10:00:00Z",
+    "updated_at": "2025-01-23T15:30:00Z",
+    "description": "Animation review playlist for Episode 01",
+    "type": "review",
+    "status": "active",
+    "settings": {
+      "auto_play": true,
+      "loop": false,
+      "show_timecode": true,
+      "default_track_height": 60,
+      "timeline_zoom": 1.0,
+      "color_coding_enabled": true
+    },
+    "clips": [
+      {
+        "clip_id": "clip_001",
+        "media_id": "media_001",
+        "position": 0,
+        "duration": 120,
+        "in_point": 0,
+        "out_point": 120,
+        "track": 1,
+        "department": "animation",
+        "sequence": "seq010",
+        "shot": "shot010",
+        "version": "v003",
+        "color": "#1f4e79",
+        "notes": "Final animation approved",
+        "added_at": "2025-01-23T10:15:00Z"
+      },
+      {
+        "clip_id": "clip_002",
+        "media_id": "media_003",
+        "position": 120,
+        "duration": 96,
+        "in_point": 0,
+        "out_point": 96,
+        "track": 1,
+        "department": "compositing",
+        "sequence": "seq020",
+        "shot": "shot030",
+        "version": "v001",
+        "color": "#196f3d",
+        "notes": "First comp pass for review",
+        "added_at": "2025-01-23T10:30:00Z"
+      }
+    ],
+    "tracks": [
+      {
+        "track_id": 1,
+        "name": "Video Track 1",
+        "type": "video",
+        "height": 60,
+        "locked": false,
+        "muted": false,
+        "solo": false,
+        "color": "#2d2d2d"
+      }
+    ],
+    "metadata": {
+      "total_duration": 216,
+      "clip_count": 2,
+      "departments": ["animation", "compositing"],
+      "sequences": ["seq010", "seq020"],
+      "last_played_position": 0,
+      "playback_settings": {
+        "frame_rate": 24,
+        "resolution": "1920x1080",
+        "color_space": "Rec709"
+      }
+    }
+  },
+  {
+    "_id": "playlist_002",
+    "name": "Lighting Department - Daily Review",
+    "project_id": "proj_001",
+    "created_by": "jane.lighter",
+    "created_at": "2025-01-24T09:00:00Z",
+    "updated_at": "2025-01-24T14:20:00Z",
+    "description": "Daily lighting review for all active shots",
+    "type": "department_review",
+    "status": "active",
+    "settings": {
+      "auto_play": false,
+      "loop": true,
+      "show_timecode": true,
+      "default_track_height": 80,
+      "timeline_zoom": 1.5,
+      "color_coding_enabled": true
+    },
+    "clips": [
+      {
+        "clip_id": "clip_003",
+        "media_id": "media_002",
+        "position": 0,
+        "duration": 120,
+        "in_point": 0,
+        "out_point": 120,
+        "track": 1,
+        "department": "lighting",
+        "sequence": "seq010",
+        "shot": "shot010",
+        "version": "v002",
+        "color": "#d68910",
+        "notes": "Lighting pass pending approval",
+        "added_at": "2025-01-24T09:15:00Z"
+      }
+    ],
+    "tracks": [
+      {
+        "track_id": 1,
+        "name": "Lighting Track",
+        "type": "video",
+        "height": 80,
+        "locked": false,
+        "muted": false,
+        "solo": false,
+        "color": "#d68910"
+      }
+    ],
+    "metadata": {
+      "total_duration": 120,
+      "clip_count": 1,
+      "departments": ["lighting"],
+      "sequences": ["seq010"],
+      "last_played_position": 45,
+      "playback_settings": {
+        "frame_rate": 24,
+        "resolution": "1920x1080",
+        "color_space": "ACES"
+      }
+    }
+  },
+  {
+    "_id": "playlist_003",
+    "name": "Project Beta - Asset Review",
+    "project_id": "proj_002",
+    "created_by": "sarah.modeler",
+    "created_at": "2025-01-25T11:00:00Z",
+    "updated_at": "2025-01-25T11:00:00Z",
+    "description": "Asset review playlist for Project Beta",
+    "type": "asset_review",
+    "status": "draft",
+    "settings": {
+      "auto_play": true,
+      "loop": false,
+      "show_timecode": false,
+      "default_track_height": 50,
+      "timeline_zoom": 0.8,
+      "color_coding_enabled": true
+    },
+    "clips": [],
+    "tracks": [
+      {
+        "track_id": 1,
+        "name": "Asset Track",
+        "type": "video",
+        "height": 50,
+        "locked": false,
+        "muted": false,
+        "solo": false,
+        "color": "#2d2d2d"
+      }
+    ],
+    "metadata": {
+      "total_duration": 0,
+      "clip_count": 0,
+      "departments": [],
+      "sequences": [],
+      "last_played_position": 0,
+      "playback_settings": {
+        "frame_rate": 24,
+        "resolution": "1920x1080",
+        "color_space": "Rec709"
+      }
+    }
+  }
+]

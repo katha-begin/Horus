@@ -29,9 +29,13 @@ search_dock = None
 comments_dock = None
 timeline_dock = None
 media_grid_dock = None
+timeline_playlist_dock = None  # New Timeline Playlist Widget
 horus_connector = None
 current_project_id = None
 annotations_popup_window = None
+
+# Feature flags
+ENABLE_TIMELINE_PLAYLIST = True  # Enable/disable Timeline Playlist feature
 
 def create_comments_panel():
     """Create comments and annotations panel."""
@@ -524,6 +528,70 @@ def create_reply_widget(reply_data):
     except Exception as e:
         print(f"Error creating reply widget: {e}")
         return QWidget()
+
+def create_timeline_playlist_panel():
+    """Create Timeline Playlist panel using the new professional widget."""
+    try:
+        # Import the Timeline Playlist Widget
+        import sys
+        import os
+
+        # Add current directory to path for import
+        current_dir = os.getcwd()
+        if current_dir not in sys.path:
+            sys.path.insert(0, current_dir)
+
+        from horus_timeline_playlist_widget import HorusTimelinePlaylistWidget
+
+        # Create the widget
+        playlist_widget = HorusTimelinePlaylistWidget()
+
+        # Connect signals to integrate with existing system
+        playlist_widget.playback_requested.connect(on_playlist_playback_requested)
+        playlist_widget.playlist_selected.connect(on_playlist_selected)
+        playlist_widget.clip_selected.connect(on_clip_selected)
+
+        print("Timeline Playlist panel created successfully")
+        return playlist_widget
+
+    except ImportError as e:
+        print(f"Could not import Timeline Playlist Widget: {e}")
+        print("Timeline Playlist feature disabled")
+        return None
+    except Exception as e:
+        print(f"Error creating Timeline Playlist panel: {e}")
+        return None
+
+def on_playlist_playback_requested(media_path, frame):
+    """Handle playback request from Timeline Playlist."""
+    try:
+        import rv.commands as rvc
+        rvc.addSource(media_path)
+        if frame > 0:
+            rvc.setFrame(frame)
+        print(f"Loading from playlist: {media_path} at frame {frame}")
+    except Exception as e:
+        print(f"Error loading from playlist: {e}")
+
+def on_playlist_selected(playlist_id):
+    """Handle playlist selection from Timeline Playlist."""
+    print(f"Playlist selected: {playlist_id}")
+    # TODO: Update other panels if needed
+
+def on_clip_selected(clip_id):
+    """Handle clip selection from Timeline Playlist."""
+    print(f"Clip selected: {clip_id}")
+    # TODO: Update other panels if needed
+
+def add_media_to_current_playlist(media_record):
+    """Add media from media browser to current playlist."""
+    global timeline_playlist_dock
+
+    if timeline_playlist_dock and timeline_playlist_dock.widget():
+        playlist_widget = timeline_playlist_dock.widget()
+        playlist_widget.add_media_to_playlist(media_record)
+    else:
+        print("Timeline Playlist not available")
 
 def create_timeline_panel():
     """Create timeline panel with shot sequence and department management."""
@@ -1029,23 +1097,62 @@ def create_media_widget(media_item):
         # Store data
         widget.horus_data = media_item
         
-        # Click handler
-        def on_click():
+        # Click handler with right-click context menu
+        def on_click(event):
             try:
-                file_path = media_item.get('file_path', '')
-                if file_path:
-                    try:
-                        import rv.commands as rvc
-                        rvc.addSource(file_path)
-                        print(f"Loaded in RV: {file_name}")
-                    except:
-                        print(f"Selected: {file_name}")
-                else:
-                    print(f"No path for: {file_name}")
+                from PySide2.QtCore import Qt
+                from PySide2.QtWidgets import QMenu, QAction
+
+                if event.button() == Qt.LeftButton:
+                    # Left click - load in RV
+                    file_path = media_item.get('file_path', '')
+                    if file_path:
+                        try:
+                            import rv.commands as rvc
+                            rvc.addSource(file_path)
+                            print(f"Loaded in RV: {file_name}")
+                        except:
+                            print(f"Selected: {file_name}")
+                    else:
+                        print(f"No path for: {file_name}")
+
+                elif event.button() == Qt.RightButton:
+                    # Right click - show context menu
+                    if ENABLE_TIMELINE_PLAYLIST and timeline_playlist_dock:
+                        menu = QMenu(widget)
+
+                        # Add to playlist action
+                        add_to_playlist_action = QAction("Add to Current Playlist", menu)
+                        add_to_playlist_action.triggered.connect(
+                            lambda: add_media_to_current_playlist(media_item)
+                        )
+                        menu.addAction(add_to_playlist_action)
+
+                        # Load in RV action
+                        load_action = QAction("Load in RV", menu)
+                        load_action.triggered.connect(
+                            lambda: on_click_load_rv(media_item)
+                        )
+                        menu.addAction(load_action)
+
+                        # Show menu at cursor position
+                        menu.exec_(event.globalPos())
+
             except Exception as e:
                 print(f"Error: {e}")
-        
-        widget.mousePressEvent = lambda event: on_click()
+
+        def on_click_load_rv(media_item):
+            """Load media item in RV."""
+            file_path = media_item.get('file_path', '')
+            if file_path:
+                try:
+                    import rv.commands as rvc
+                    rvc.addSource(file_path)
+                    print(f"Loaded in RV: {media_item.get('file_name', 'Unknown')}")
+                except:
+                    print(f"Selected: {media_item.get('file_name', 'Unknown')}")
+
+        widget.mousePressEvent = on_click
         
         return widget
         
@@ -2845,9 +2952,19 @@ def create_modular_media_browser():
 
         # Create timeline panel with shot sequence functionality
         timeline_panel = create_timeline_panel()
-        
-        if not all([search_panel, media_grid_panel, comments_panel, timeline_panel]):
-            print("Failed to create panels")
+
+        # Create Timeline Playlist panel (optional)
+        timeline_playlist_panel = None
+        if ENABLE_TIMELINE_PLAYLIST:
+            timeline_playlist_panel = create_timeline_playlist_panel()
+            if timeline_playlist_panel:
+                print("Timeline Playlist feature enabled")
+            else:
+                print("Timeline Playlist feature disabled (import failed)")
+
+        required_panels = [search_panel, media_grid_panel, comments_panel, timeline_panel]
+        if not all(required_panels):
+            print("Failed to create required panels")
             return False
         
         # Apply styling
@@ -2875,23 +2992,45 @@ def create_modular_media_browser():
         media_grid_dock.setWidget(media_grid_panel)
         media_grid_dock.setAllowedAreas(Qt.AllDockWidgetAreas)
 
+        # Create Timeline Playlist dock if available
+        timeline_playlist_dock_widget = None
+        if timeline_playlist_panel:
+            timeline_playlist_dock_widget = QDockWidget("Timeline Playlist Manager", rv_main_window)
+            timeline_playlist_dock_widget.setWidget(timeline_playlist_panel)
+            timeline_playlist_dock_widget.setAllowedAreas(Qt.AllDockWidgetAreas)
+            timeline_playlist_dock_widget.setMinimumWidth(600)
+            timeline_playlist_dock_widget.setMinimumHeight(400)
+
         # Add to RV
         rv_main_window.addDockWidget(Qt.LeftDockWidgetArea, search_dock)
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, comments_dock)
         rv_main_window.addDockWidget(Qt.BottomDockWidgetArea, timeline_dock)
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, media_grid_dock)
 
+        # Add Timeline Playlist dock if available
+        if timeline_playlist_dock_widget:
+            rv_main_window.addDockWidget(Qt.BottomDockWidgetArea, timeline_playlist_dock_widget)
+            # Tabify with timeline dock for better space usage
+            rv_main_window.tabifyDockWidget(timeline_dock, timeline_playlist_dock_widget)
+
         # Store global references for access from other functions
         globals()['search_dock'] = search_dock
         globals()['comments_dock'] = comments_dock
         globals()['timeline_dock'] = timeline_dock
         globals()['media_grid_dock'] = media_grid_dock
+        globals()['timeline_playlist_dock'] = timeline_playlist_dock_widget
         
         # Show panels
         search_dock.show()
         comments_dock.show()
         timeline_dock.show()
         media_grid_dock.show()
+
+        # Show Timeline Playlist if available
+        if timeline_playlist_dock_widget:
+            timeline_playlist_dock_widget.show()
+            # Bring timeline dock to front initially
+            timeline_dock.raise_()
         
         # Setup Horus integration
         setup_horus_integration()
@@ -2915,5 +3054,14 @@ if success:
     print("  - Media grid with Horus metadata")
     print("  - Click media items to load in RV")
     print("  - Real-time data from Horus database")
+    print("  - Professional comment threading system")
+    print("  - Timeline sequence visualization")
+    if ENABLE_TIMELINE_PLAYLIST and timeline_playlist_dock:
+        print("  - Timeline Playlist Manager (NEW!)")
+        print("    * Professional NLE-style interface")
+        print("    * Playlist creation and management")
+        print("    * Right-click media items to add to playlist")
+        print("    * Department-based color coding")
+        print("    * Drag-and-drop clip reordering")
 else:
     print("Failed to create MediaBrowser")
