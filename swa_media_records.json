@@ -1,0 +1,114 @@
+[
+  {
+    "_id": "swa_ep00_sq0010_sh0020_lighting_v002",
+    "project_id": "SWA",
+    "file_name": "SWA_Ep00_SH0020_lighting_v002.exr",
+    "file_path": "V:/SWA/all/scene/Ep00/sq0010/SH0020/lighting/version/SWA_Ep00_SH0020_lighting_v002.exr",
+    "file_type": "image_sequence",
+    "linked_task_id": "ep00_ep00_sq0010_ep00_sh0020_lighting",
+    "version": "v002",
+    "approval_status": "published",
+    "author": "test_user",
+    "description": "Lighting pass for SWA Episode 00 Shot 0020",
+    "created_at": "2025-08-05T20:36:24Z",
+    "updated_at": "2025-08-05T20:36:25Z",
+    "metadata": {
+      "width": 1920,
+      "height": 1080,
+      "duration": 9152,
+      "frame_rate": 24,
+      "format": "OpenEXR",
+      "codec": "ZIP",
+      "color_space": "ACES",
+      "file_size": 2147483648,
+      "frame_range": {
+        "start": 1001,
+        "end": 10153
+      }
+    },
+    "thumbnail_key": "thumbnails/SWA_Ep00_SH0020_lighting_v002.jpg",
+    "tags": ["lighting", "published", "swa", "ep00"]
+  },
+  {
+    "_id": "swa_ep00_sq0010_sh0020_lighting_v001",
+    "project_id": "SWA",
+    "file_name": "SWA_Ep00_SH0020_lighting_v001.exr",
+    "file_path": "V:/SWA/all/scene/Ep00/sq0010/SH0020/lighting/version/SWA_Ep00_SH0020_lighting_v001.exr",
+    "file_type": "image_sequence",
+    "linked_task_id": "ep00_ep00_sq0010_ep00_sh0020_lighting",
+    "version": "v001",
+    "approval_status": "superseded",
+    "author": "test_user",
+    "description": "Initial lighting pass for SWA Episode 00 Shot 0020",
+    "created_at": "2025-08-04T14:30:00Z",
+    "updated_at": "2025-08-04T14:30:00Z",
+    "metadata": {
+      "width": 1920,
+      "height": 1080,
+      "duration": 9152,
+      "frame_rate": 24,
+      "format": "OpenEXR",
+      "codec": "ZIP",
+      "color_space": "ACES",
+      "file_size": 2000000000,
+      "frame_range": {
+        "start": 1001,
+        "end": 10153
+      }
+    },
+    "thumbnail_key": "thumbnails/SWA_Ep00_SH0020_lighting_v001.jpg",
+    "tags": ["lighting", "superseded", "swa", "ep00"]
+  },
+  {
+    "_id": "swa_ep00_sq0010_sh0020_animation_v003",
+    "project_id": "SWA",
+    "file_name": "SWA_Ep00_SH0020_animation_v003.ma",
+    "file_path": "V:/SWA/all/scene/Ep00/sq0010/SH0020/animation/version/SWA_Ep00_SH0020_animation_v003.ma",
+    "file_type": "3d_scene",
+    "linked_task_id": "ep00_ep00_sq0010_ep00_sh0020_animation",
+    "version": "v003",
+    "approval_status": "approved",
+    "author": "animator.user",
+    "description": "Character animation for SWA Episode 00 Shot 0020",
+    "created_at": "2025-08-03T16:45:00Z",
+    "updated_at": "2025-08-03T16:45:00Z",
+    "metadata": {
+      "format": "Maya ASCII",
+      "frame_rate": 24,
+      "file_size": 52428800,
+      "frame_range": {
+        "start": 1001,
+        "end": 10153
+      },
+      "maya_version": "2024.1"
+    },
+    "thumbnail_key": "thumbnails/SWA_Ep00_SH0020_animation_v003.jpg",
+    "tags": ["animation", "approved", "swa", "ep00", "maya"]
+  },
+  {
+    "_id": "swa_ep00_sq0010_sh0020_comp_v001",
+    "project_id": "SWA",
+    "file_name": "SWA_Ep00_SH0020_comp_v001.mov",
+    "file_path": "V:/SWA/all/comp/Ep00/sq0010/SH0020/compositing/version/SWA_Ep00_SH0020_comp_v001.mov",
+    "file_type": "video",
+    "linked_task_id": "ep00_ep00_sq0010_ep00_sh0020_compositing",
+    "version": "v001",
+    "approval_status": "in_review",
+    "author": "comp.artist",
+    "description": "Composite for SWA Episode 00 Shot 0020",
+    "created_at": "2025-08-06T10:20:00Z",
+    "updated_at": "2025-08-06T10:20:00Z",
+    "metadata": {
+      "width": 1920,
+      "height": 1080,
+      "duration": 9152,
+      "frame_rate": 24,
+      "format": "QuickTime",
+      "codec": "ProRes 422",
+      "color_space": "Rec709",
+      "file_size": 1073741824
+    },
+    "thumbnail_key": "thumbnails/SWA_Ep00_SH0020_comp_v001.jpg",
+    "tags": ["compositing", "review", "swa", "ep00", "quicktime"]
+  }
+]

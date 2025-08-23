@@ -19,15 +19,6 @@ import sys
 import subprocess
 from pathlib import Path
 
-# Import version information
-try:
-    from horus_version import __version__, __build_date__, get_version_info
-except ImportError:
-    __version__ = "0.1.0-dev"
-    __build_date__ = "unknown"
-    def get_version_info():
-        return {"version": __version__, "build_date": __build_date__, "git_hash": "unknown"}
-
 
 def find_openrv_executable():
     """Find Open RV executable."""
@@ -69,17 +60,9 @@ def check_horus_database():
 
 def main():
     """Main launcher function."""
-    version_info = get_version_info()
     print("=" * 60)
     print("🎬 Horus-RV Launcher")
     print("   Open RV with Horus MediaBrowser Integration")
-    print("=" * 60)
-    print(f"Version: {version_info['version_with_build']}")
-    print(f"Build Date: {version_info['build_date'][:19]}")  # Remove microseconds
-    if version_info.get('git_branch'):
-        print(f"Git Branch: {version_info['git_branch']}")
-    if version_info.get('git_hash'):
-        print(f"Git Hash: {version_info['git_hash'][:7]}")
     print("=" * 60)
     print()
     
