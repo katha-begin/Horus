@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Horus Web Player - OpenRV-Inspired VFX Review</title>
+    <link rel="stylesheet" href="css/player.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo">
+                <h1>🦅 Horus Web Player</h1>
+                <span class="subtitle">OpenRV-Inspired VFX Review System</span>
+            </div>
+            <div class="header-controls">
+                <input type="file" id="fileInput" accept="video/*,image/*" multiple style="display: none;">
+                <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
+                    📁 Load Media
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <!-- Video Viewport -->
+            <div class="viewport-container">
+                <div class="viewport">
+                    <video id="videoPlayer" preload="metadata">
+                        Your browser does not support the video tag.
+                    </video>
+                    <canvas id="annotationCanvas"></canvas>
+                    <canvas id="imageSequenceCanvas" style="display: none;"></canvas>
+
+                    <!-- Viewport Overlay Info -->
+                    <div class="viewport-info">
+                        <div class="info-item">
+                            <span id="currentFrame">0</span> / <span id="totalFrames">0</span>
+                        </div>
+                        <div class="info-item">
+                            <span id="timecode">00:00:00:00</span>
+                        </div>
+                        <div class="info-item">
+                            <span id="resolution">No media loaded</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Annotation Tools -->
+                <div class="annotation-toolbar">
+                    <button class="tool-btn" data-tool="select" title="Select (V)">
+                        ◉
+                    </button>
+                    <button class="tool-btn" data-tool="pen" title="Pen Tool (P)">
+                        ✏️
+                    </button>
+                    <button class="tool-btn" data-tool="arrow" title="Arrow (A)">
+                        ➤
+                    </button>
+                    <button class="tool-btn" data-tool="rect" title="Rectangle (R)">
+                        ▭
+                    </button>
+                    <button class="tool-btn" data-tool="circle" title="Circle (C)">
+                        ○
+                    </button>
+                    <button class="tool-btn" data-tool="text" title="Text (T)">
+                        T
+                    </button>
+                    <div class="color-picker">
+                        <input type="color" id="annotationColor" value="#ff0000">
+                    </div>
+                    <button class="tool-btn" id="clearAnnotations" title="Clear All">
+                        🗑️
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Sidebar - Comments & Annotations -->
+            <div class="sidebar-right">
+                <div class="panel">
+                    <h3>Comments & Annotations</h3>
+                    <div id="annotationList" class="annotation-list">
+                        <p class="empty-state">No annotations yet. Use the tools to add annotations.</p>
+                    </div>
+                    <div class="panel-actions">
+                        <button class="btn-secondary" id="exportAnnotations">Export JSON</button>
+                        <button class="btn-secondary" id="importAnnotations">Import JSON</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>Color Management</h3>
+                    <div class="color-controls">
+                        <div class="control-group">
+                            <label>Brightness</label>
+                            <input type="range" id="brightness" min="-100" max="100" value="0">
+                            <span id="brightnessValue">0</span>
+                        </div>
+                        <div class="control-group">
+                            <label>Contrast</label>
+                            <input type="range" id="contrast" min="-100" max="100" value="0">
+                            <span id="contrastValue">0</span>
+                        </div>
+                        <div class="control-group">
+                            <label>Saturation</label>
+                            <input type="range" id="saturation" min="-100" max="100" value="0">
+                            <span id="saturationValue">0</span>
+                        </div>
+                        <div class="control-group">
+                            <label>Exposure</label>
+                            <input type="range" id="exposure" min="-2" max="2" step="0.1" value="0">
+                            <span id="exposureValue">0.0</span>
+                        </div>
+                        <button class="btn-secondary" id="resetColor">Reset All</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>Media Info</h3>
+                    <div id="mediaInfo" class="media-info">
+                        <p>No media loaded</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timeline & Controls -->
+        <div class="timeline-container">
+            <!-- Transport Controls -->
+            <div class="transport-controls">
+                <button class="transport-btn" id="firstFrame" title="First Frame (Home)">
+                    ⏮
+                </button>
+                <button class="transport-btn" id="prevFrame" title="Previous Frame (←)">
+                    ⏪
+                </button>
+                <button class="transport-btn" id="playPause" title="Play/Pause (Space)">
+                    ▶
+                </button>
+                <button class="transport-btn" id="nextFrame" title="Next Frame (→)">
+                    ⏩
+                </button>
+                <button class="transport-btn" id="lastFrame" title="Last Frame (End)">
+                    ⏭
+                </button>
+
+                <div class="playback-speed">
+                    <label>Speed:</label>
+                    <select id="playbackSpeed">
+                        <option value="0.25">0.25x</option>
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                    </select>
+                </div>
+
+                <div class="fps-display">
+                    <label>FPS:</label>
+                    <input type="number" id="fpsInput" value="24" min="1" max="120">
+                </div>
+
+                <button class="transport-btn" id="loop" title="Loop (L)">
+                    🔁
+                </button>
+            </div>
+
+            <!-- Timeline Scrubber -->
+            <div class="timeline">
+                <div class="timeline-ruler" id="timelineRuler"></div>
+                <div class="timeline-track" id="timelineTrack">
+                    <div class="timeline-progress" id="timelineProgress"></div>
+                    <div class="timeline-markers" id="timelineMarkers"></div>
+                    <div class="timeline-scrubber" id="timelineScrubber"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <span id="statusMessage">Ready</span>
+            </div>
+            <div class="status-item">
+                <span id="fileInfo">No file loaded</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/player.js"></script>
+    <script src="js/annotations.js"></script>
+    <script src="js/timeline.js"></script>
+    <script src="js/color-management.js"></script>
+    <script src="js/image-sequence.js"></script>
+</body>
+</html>
