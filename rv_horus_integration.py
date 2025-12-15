@@ -2996,16 +2996,17 @@ def apply_filters_fs():
 
         # Get filter values
         episode = search_widget.episode_filter.currentText()
-        sequence = search_widget.sequence_filter.currentText()
         department = search_widget.department_filter.currentText()
-        shot = search_widget.shot_filter.currentText()
         status = search_widget.status_filter.currentText()
         search_text = search_widget.search_input.text().lower()
         latest_only = search_widget.version_toggle.isChecked()
 
-        # Update dependent filters
+        # Update dependent filters FIRST, then read current values
         populate_sequence_filter(episode)
+        sequence = search_widget.sequence_filter.currentText()
+
         populate_shot_filter_fs(episode, sequence)
+        shot = search_widget.shot_filter.currentText()
 
         # Get media files from file system
         if episode == "All":
