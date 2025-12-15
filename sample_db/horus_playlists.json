@@ -966,5 +966,27 @@
         "color_space": "Rec709"
       }
     }
+  },
+  {
+    "_id": "playlist_005",
+    "name": "trst",
+    "project_id": "proj_001",
+    "created_by": "user",
+    "created_at": "2025-08-24T09:32:23.447431",
+    "updated_at": "2025-08-24T09:32:23.447431",
+    "description": "New playlist: trst",
+    "type": "review",
+    "status": "active",
+    "settings": {
+      "auto_play": true,
+      "loop": false,
+      "show_timecode": true,
+      "default_track_height": 45,
+      "timeline_zoom": 1.0,
+      "color_coding_enabled": true
+    },
+    "clips": [],
+    "tracks": [],
+    "metadata": {}
   }
 ]
