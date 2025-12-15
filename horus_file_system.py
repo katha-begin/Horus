@@ -1,0 +1,656 @@
+"""
+Horus File System Backend
+Supports both local mount (V:/, W:/) and SSH access to remote server.
+
+Usage:
+    fs = HorusFileSystem()
+    fs.auto_detect()  # Detect available access method
+
+    episodes = fs.list_episodes()
+    sequences = fs.list_sequences("Ep02")
+    shots = fs.list_shots("Ep02", "sq0010")
+    media = fs.list_media("Ep02", "sq0010", "SH0010", "comp")
+"""
+
+import os
+import sys
+import json
+import subprocess
+import re
+from abc import ABC, abstractmethod
+from typing import List, Dict, Optional, Tuple
+from pathlib import Path
+from datetime import datetime
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+# Linux paths (server)
+LINUX_PROJECT_ROOT = "/mnt/igloo_swa_v"
+LINUX_IMAGE_ROOT = "/mnt/igloo_swa_w"
+
+# Windows paths (mounted drives)
+WINDOWS_PROJECT_ROOT = "V:"
+WINDOWS_IMAGE_ROOT = "W:"
+
+# SSH Configuration
+SSH_HOST = "10.100.128.193"
+SSH_USER = "ec2-user"
+SSH_KEY_PATH = None  # Use default key or specify path
+
+# Project structure
+PROJECT_NAME = "SWA"
+SCENE_PATH = "all/scene"
+HORUS_DATA_PATH = ".horus"
+
+
+# ============================================================================
+# Abstract Base Class
+# ============================================================================
+
+class FileSystemProvider(ABC):
+    """Abstract base class for file system access."""
+
+    @abstractmethod
+    def list_directory(self, path: str) -> List[str]:
+        """List contents of a directory."""
+        pass
+
+    @abstractmethod
+    def file_exists(self, path: str) -> bool:
+        """Check if file exists."""
+        pass
+
+    @abstractmethod
+    def read_file(self, path: str) -> str:
+        """Read file contents."""
+        pass
+
+    @abstractmethod
+    def write_file(self, path: str, content: str) -> bool:
+        """Write content to file."""
+        pass
+
+    @abstractmethod
+    def get_file_info(self, path: str) -> Dict:
+        """Get file metadata (size, modified time)."""
+        pass
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        """Check if this provider is available."""
+        pass
+
+
+# ============================================================================
+# Local File System Provider
+# ============================================================================
+
+class LocalFileSystemProvider(FileSystemProvider):
+    """Access files via local mount (V:/, W:/ on Windows)."""
+
+    def __init__(self, project_root: str, image_root: str):
+        self.project_root = project_root
+        self.image_root = image_root
+
+    def list_directory(self, path: str) -> List[str]:
+        """List contents of a directory."""
+        try:
+            if os.path.isdir(path):
+                return sorted(os.listdir(path))
+            return []
+        except (OSError, PermissionError) as e:
+            print(f"Error listing directory {path}: {e}")
+            return []
+
+    def file_exists(self, path: str) -> bool:
+        """Check if file exists."""
+        return os.path.exists(path)
+
+    def read_file(self, path: str) -> str:
+        """Read file contents."""
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Error reading file {path}: {e}")
+            return ""
+
+    def write_file(self, path: str, content: str) -> bool:
+        """Write content to file."""
+        try:
+            # Create directory if needed
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return True
+        except Exception as e:
+            print(f"Error writing file {path}: {e}")
+            return False
+
+    def get_file_info(self, path: str) -> Dict:
+        """Get file metadata."""
+        try:
+            stat = os.stat(path)
+            return {
+                "size": stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "exists": True
+            }
+        except Exception:
+            return {"size": 0, "modified": None, "exists": False}
+
+    def is_available(self) -> bool:
+        """Check if local mount is available."""
+        return os.path.isdir(self.project_root)
+
+
+# ============================================================================
+# SSH File System Provider
+# ============================================================================
+
+class SSHFileSystemProvider(FileSystemProvider):
+    """Access files via SSH to remote server."""
+
+    def __init__(self, host: str, user: str, key_path: Optional[str] = None):
+        self.host = host
+        self.user = user
+        self.key_path = key_path
+        self._cache = {}  # Simple cache for directory listings
+        self._cache_timeout = 30  # seconds
+
+    def _build_ssh_command(self, remote_cmd: str) -> List[str]:
+        """Build SSH command with proper arguments."""
+        cmd = ["ssh"]
+        if self.key_path:
+            cmd.extend(["-i", self.key_path])
+        cmd.extend([
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "ConnectTimeout=5",
+            f"{self.user}@{self.host}",
+            remote_cmd
+        ])
+        return cmd
+
+    def _run_ssh_command(self, remote_cmd: str, timeout: int = 10) -> Tuple[bool, str]:
+        """Run SSH command and return (success, output)."""
+        try:
+            cmd = self._build_ssh_command(remote_cmd)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+            )
+            if result.returncode == 0:
+                return True, result.stdout.strip()
+            return False, result.stderr.strip()
+        except subprocess.TimeoutExpired:
+            return False, "SSH command timed out"
+        except Exception as e:
+            return False, str(e)
+
+    def list_directory(self, path: str) -> List[str]:
+        """List contents of a directory via SSH."""
+        cache_key = f"ls:{path}"
+        if cache_key in self._cache:
+            cached_time, cached_data = self._cache[cache_key]
+            if (datetime.now() - cached_time).seconds < self._cache_timeout:
+                return cached_data
+
+        success, output = self._run_ssh_command(f"ls -1 '{path}' 2>/dev/null")
+        if success and output:
+            items = sorted(output.split('\n'))
+            self._cache[cache_key] = (datetime.now(), items)
+            return items
+        return []
+
+    def file_exists(self, path: str) -> bool:
+        """Check if file exists via SSH."""
+        success, output = self._run_ssh_command(f"test -e '{path}' && echo 'yes'")
+        return success and output == 'yes'
+
+    def read_file(self, path: str) -> str:
+        """Read file contents via SSH."""
+        success, output = self._run_ssh_command(f"cat '{path}'", timeout=30)
+        return output if success else ""
+
+    def write_file(self, path: str, content: str) -> bool:
+        """Write content to file via SSH."""
+        escaped = content.replace("'", "'\\''")
+        cmd = f"mkdir -p $(dirname '{path}') && echo '{escaped}' > '{path}'"
+        success, _ = self._run_ssh_command(cmd)
+        return success
+
+    def get_file_info(self, path: str) -> Dict:
+        """Get file metadata via SSH."""
+        cmd = f"stat -c '%s %Y' '{path}' 2>/dev/null"
+        success, output = self._run_ssh_command(cmd)
+        if success and output:
+            try:
+                parts = output.split()
+                size = int(parts[0])
+                mtime = datetime.fromtimestamp(int(parts[1]))
+                return {"size": size, "modified": mtime.isoformat(), "exists": True}
+            except:
+                pass
+        return {"size": 0, "modified": None, "exists": False}
+
+    def is_available(self) -> bool:
+        """Check if SSH connection is available."""
+        success, _ = self._run_ssh_command("echo 'ok'", timeout=5)
+        return success
+
+    def clear_cache(self):
+        """Clear the directory listing cache."""
+        self._cache.clear()
+
+
+
+# ============================================================================
+# Main Horus File System Class
+# ============================================================================
+
+class HorusFileSystem:
+    """
+    High-level file system API for Horus.
+    Auto-detects whether to use local mount or SSH access.
+    """
+
+    def __init__(self):
+        self.provider: Optional[FileSystemProvider] = None
+        self.access_mode: str = "none"  # "local", "ssh", or "none"
+        self.project_root: str = ""
+        self.image_root: str = ""
+        self.scene_base: str = ""
+        self.horus_data: str = ""
+
+    def auto_detect(self) -> bool:
+        """Auto-detect available access method."""
+        print("🔍 Detecting file system access...")
+
+        # Try local mount first (Windows)
+        if sys.platform == 'win32':
+            win_project = os.path.join(WINDOWS_PROJECT_ROOT, PROJECT_NAME)
+            if os.path.isdir(win_project):
+                self.provider = LocalFileSystemProvider(
+                    WINDOWS_PROJECT_ROOT, WINDOWS_IMAGE_ROOT
+                )
+                self.access_mode = "local"
+                self.project_root = WINDOWS_PROJECT_ROOT
+                self.image_root = WINDOWS_IMAGE_ROOT
+                self._setup_paths()
+                print(f"✅ Using local mount: {WINDOWS_PROJECT_ROOT}")
+                return True
+
+        # Try local mount (Linux)
+        linux_project = os.path.join(LINUX_PROJECT_ROOT, PROJECT_NAME)
+        if os.path.isdir(linux_project):
+            self.provider = LocalFileSystemProvider(
+                LINUX_PROJECT_ROOT, LINUX_IMAGE_ROOT
+            )
+            self.access_mode = "local"
+            self.project_root = LINUX_PROJECT_ROOT
+            self.image_root = LINUX_IMAGE_ROOT
+            self._setup_paths()
+            print(f"✅ Using local mount: {LINUX_PROJECT_ROOT}")
+            return True
+
+        # Try SSH
+        print("📡 Trying SSH connection...")
+        ssh_provider = SSHFileSystemProvider(SSH_HOST, SSH_USER, SSH_KEY_PATH)
+        if ssh_provider.is_available():
+            self.provider = ssh_provider
+            self.access_mode = "ssh"
+            self.project_root = LINUX_PROJECT_ROOT
+            self.image_root = LINUX_IMAGE_ROOT
+            self._setup_paths()
+            print(f"✅ Using SSH: {SSH_USER}@{SSH_HOST}")
+            return True
+
+        print("❌ No file system access available")
+        return False
+
+    def _setup_paths(self):
+        """Setup derived paths."""
+        self.scene_base = f"{self.project_root}/{PROJECT_NAME}/{SCENE_PATH}"
+        self.horus_data = f"{self.project_root}/{PROJECT_NAME}/{HORUS_DATA_PATH}"
+
+    def convert_path_for_rv(self, path: str) -> str:
+        """Convert path for RV playback (always use local path if mounted)."""
+        if self.access_mode == "local":
+            return path
+        # For SSH mode, convert Linux path to Windows mount if available
+        if sys.platform == 'win32':
+            path = path.replace(LINUX_PROJECT_ROOT, WINDOWS_PROJECT_ROOT)
+            path = path.replace(LINUX_IMAGE_ROOT, WINDOWS_IMAGE_ROOT)
+            path = path.replace("/", "\\")
+        return path
+
+    # ========================================================================
+    # Directory Listing Methods
+    # ========================================================================
+
+    def list_episodes(self) -> List[Dict]:
+        """List all episodes."""
+        if not self.provider:
+            return []
+
+        items = self.provider.list_directory(self.scene_base)
+        episodes = []
+        for item in items:
+            if item.startswith("Ep") or item.startswith("RD"):
+                episodes.append({
+                    "name": item,
+                    "path": f"{self.scene_base}/{item}",
+                    "type": "episode"
+                })
+        return episodes
+
+    def list_sequences(self, episode: str) -> List[Dict]:
+        """List sequences in an episode."""
+        if not self.provider:
+            return []
+
+        path = f"{self.scene_base}/{episode}"
+        items = self.provider.list_directory(path)
+        sequences = []
+        for item in items:
+            if item.startswith("sq"):
+                sequences.append({
+                    "name": item,
+                    "episode": episode,
+                    "path": f"{path}/{item}",
+                    "type": "sequence"
+                })
+        return sequences
+
+    def list_shots(self, episode: str, sequence: str) -> List[Dict]:
+        """List shots in a sequence."""
+        if not self.provider:
+            return []
+
+        path = f"{self.scene_base}/{episode}/{sequence}"
+        items = self.provider.list_directory(path)
+        shots = []
+        for item in items:
+            if item.startswith("SH"):
+                shots.append({
+                    "name": item,
+                    "episode": episode,
+                    "sequence": sequence,
+                    "path": f"{path}/{item}",
+                    "type": "shot"
+                })
+        return shots
+
+    def list_departments(self, episode: str, sequence: str, shot: str) -> List[str]:
+        """List departments in a shot."""
+        if not self.provider:
+            return []
+
+        path = f"{self.scene_base}/{episode}/{sequence}/{shot}"
+        items = self.provider.list_directory(path)
+        # Filter out hidden files and known non-department items
+        departments = []
+        for item in items:
+            if not item.startswith('.') and item in ['anim', 'comp', 'lighting', 'layout', 'hero', 'fx']:
+                departments.append(item)
+        return departments
+
+    def list_media_files(self, episode: str, sequence: str = None,
+                         shot: str = None, department: str = None,
+                         latest_only: bool = True) -> List[Dict]:
+        """
+        List media files (.mov) with flexible filtering.
+
+        If only episode is provided, list all media under that episode.
+        If sequence is provided, filter to that sequence.
+        And so on...
+        """
+        if not self.provider:
+            return []
+
+        media_files = []
+
+        # Build search paths based on provided filters
+        if episode and sequence and shot and department:
+            # Specific department
+            paths = [(episode, sequence, shot, department)]
+        elif episode and sequence and shot:
+            # All departments in shot
+            depts = self.list_departments(episode, sequence, shot)
+            paths = [(episode, sequence, shot, d) for d in depts]
+        elif episode and sequence:
+            # All shots in sequence
+            shots = self.list_shots(episode, sequence)
+            paths = []
+            for s in shots:
+                depts = self.list_departments(episode, sequence, s['name'])
+                for d in depts:
+                    paths.append((episode, sequence, s['name'], d))
+        elif episode:
+            # All sequences in episode
+            seqs = self.list_sequences(episode)
+            paths = []
+            for seq in seqs:
+                shots = self.list_shots(episode, seq['name'])
+                for s in shots:
+                    depts = self.list_departments(episode, seq['name'], s['name'])
+                    for d in depts:
+                        paths.append((episode, seq['name'], s['name'], d))
+        else:
+            return []
+
+        # Scan each path for .mov files
+        for ep, seq, sh, dept in paths:
+            output_path = f"{self.scene_base}/{ep}/{seq}/{sh}/{dept}/output"
+            files = self.provider.list_directory(output_path)
+
+            # Group by shot to find versions
+            version_map = {}
+            for f in files:
+                if f.endswith('.mov'):
+                    version = self._extract_version(f)
+                    key = f"{ep}_{sh}"
+                    if key not in version_map:
+                        version_map[key] = []
+                    version_map[key].append({
+                        "file_name": f,
+                        "file_path": f"{output_path}/{f}",
+                        "episode": ep,
+                        "sequence": seq,
+                        "shot": sh,
+                        "department": dept,
+                        "version": version,
+                        "name": f"{ep}_{sh}",  # Display name format
+                        "status": "submit"  # Default status, will be loaded from comments
+                    })
+
+            # Add files (latest only or all)
+            for key, versions in version_map.items():
+                versions.sort(key=lambda x: x['version'], reverse=True)
+                if latest_only:
+                    if versions:
+                        media_files.append(versions[0])
+                else:
+                    media_files.extend(versions)
+
+        return media_files
+
+    def _extract_version(self, filename: str) -> str:
+        """Extract version from filename (e.g., 'v007' from 'Ep02_sq0010_SH0010_v007.mov')."""
+        match = re.search(r'[_-](v\d+)', filename, re.IGNORECASE)
+        if match:
+            return match.group(1).lower()
+        return "v001"
+
+
+    # ========================================================================
+    # Comments & Status Methods
+    # ========================================================================
+
+    def get_comments_file_path(self, episode: str) -> str:
+        """Get path to comments JSON file for an episode."""
+        return f"{self.horus_data}/comments/{episode}.json"
+
+    def load_comments(self, episode: str) -> Dict:
+        """Load comments for an episode."""
+        if not self.provider:
+            return {}
+
+        path = self.get_comments_file_path(episode)
+        content = self.provider.read_file(path)
+        if content:
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError as e:
+                print(f"Error parsing comments file: {e}")
+        return {"episode": episode, "shots": []}
+
+    def save_comments(self, episode: str, data: Dict) -> bool:
+        """Save comments for an episode."""
+        if not self.provider:
+            return False
+
+        path = self.get_comments_file_path(episode)
+        content = json.dumps(data, indent=2)
+        return self.provider.write_file(path, content)
+
+    def get_shot_status(self, episode: str, sequence: str, shot: str,
+                        department: str, version: str) -> str:
+        """Get status for a specific shot version."""
+        comments = self.load_comments(episode)
+        for shot_data in comments.get("shots", []):
+            if (shot_data.get("sequence") == sequence and
+                shot_data.get("shot") == shot and
+                shot_data.get("department") == department and
+                shot_data.get("version") == version):
+                return shot_data.get("shot_status", "submit")
+        return "submit"
+
+    def set_shot_status(self, episode: str, sequence: str, shot: str,
+                        department: str, version: str, status: str) -> bool:
+        """Set status for a specific shot version."""
+        comments = self.load_comments(episode)
+
+        # Find or create shot entry
+        found = False
+        for shot_data in comments.get("shots", []):
+            if (shot_data.get("sequence") == sequence and
+                shot_data.get("shot") == shot and
+                shot_data.get("department") == department and
+                shot_data.get("version") == version):
+                shot_data["shot_status"] = status
+                found = True
+                break
+
+        if not found:
+            comments.setdefault("shots", []).append({
+                "sequence": sequence,
+                "shot": shot,
+                "department": department,
+                "version": version,
+                "shot_status": status,
+                "comments": []
+            })
+
+        return self.save_comments(episode, comments)
+
+    # ========================================================================
+    # Playlist Methods
+    # ========================================================================
+
+    def get_playlists_file_path(self) -> str:
+        """Get path to playlists JSON file."""
+        return f"{self.horus_data}/playlists.json"
+
+    def load_playlists(self) -> List[Dict]:
+        """Load all playlists."""
+        if not self.provider:
+            return []
+
+        path = self.get_playlists_file_path()
+        content = self.provider.read_file(path)
+        if content:
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError as e:
+                print(f"Error parsing playlists file: {e}")
+        return []
+
+    def save_playlists(self, playlists: List[Dict]) -> bool:
+        """Save all playlists."""
+        if not self.provider:
+            return False
+
+        path = self.get_playlists_file_path()
+        content = json.dumps(playlists, indent=2)
+        return self.provider.write_file(path, content)
+
+
+# ============================================================================
+# Global Instance
+# ============================================================================
+
+# Singleton instance
+_horus_fs: Optional[HorusFileSystem] = None
+
+def get_horus_fs() -> HorusFileSystem:
+    """Get or create the global HorusFileSystem instance."""
+    global _horus_fs
+    if _horus_fs is None:
+        _horus_fs = HorusFileSystem()
+        _horus_fs.auto_detect()
+    return _horus_fs
+
+
+# ============================================================================
+# Test / Debug
+# ============================================================================
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("Horus File System Test")
+    print("=" * 60)
+
+    fs = get_horus_fs()
+
+    if fs.access_mode == "none":
+        print("\n❌ No file system access available")
+        print("   - Local mount not found (V:/ or /mnt/igloo_swa_v/)")
+        print(f"   - SSH connection failed ({SSH_USER}@{SSH_HOST})")
+    else:
+        print(f"\n✅ Access mode: {fs.access_mode}")
+        print(f"   Project root: {fs.project_root}")
+        print(f"   Scene base: {fs.scene_base}")
+
+        print("\n📁 Episodes:")
+        episodes = fs.list_episodes()
+        for ep in episodes[:5]:
+            print(f"   - {ep['name']}")
+
+        if episodes:
+            ep = episodes[0]['name']
+            print(f"\n📁 Sequences in {ep}:")
+            sequences = fs.list_sequences(ep)
+            for seq in sequences[:5]:
+                print(f"   - {seq['name']}")
+
+            if sequences:
+                seq = sequences[0]['name']
+                print(f"\n📁 Shots in {ep}/{seq}:")
+                shots = fs.list_shots(ep, seq)
+                for shot in shots[:5]:
+                    print(f"   - {shot['name']}")
+
+                print(f"\n🎬 Media files in {ep} (latest only):")
+                media = fs.list_media_files(ep, latest_only=True)
+                for m in media[:10]:
+                    print(f"   - {m['name']} {m['version']} [{m['department']}]")
+
+
+
