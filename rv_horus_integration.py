@@ -4407,16 +4407,16 @@ def create_modular_media_browser():
         search_dock.setWidget(search_panel)
         search_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         search_dock.setMinimumWidth(180)  # Minimum usable width
-        search_dock.setMaximumWidth(350)  # Maximum width constraint
+        # No max width - fully resizable
 
-        # Create Playlist Manager dock (left side) - Narrow, resizable
+        # Create Playlist Manager dock (left side) - Resizable
         playlist_dock = None
         if timeline_playlist_panel:
             playlist_dock = QDockWidget("Playlist Manager", rv_main_window)
             playlist_dock.setWidget(timeline_playlist_panel)
             playlist_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
             playlist_dock.setMinimumWidth(180)  # Minimum usable width
-            playlist_dock.setMaximumWidth(350)  # Maximum width constraint
+            # No max width - fully resizable
 
         # Create comments dock (right side)
         comments_dock = QDockWidget("Comments & Annotations", rv_main_window)
