@@ -15,6 +15,15 @@ from pathlib import Path
 
 print("Loading Open RV MediaBrowser with Horus integration...")
 
+# Import Horus File System backend
+try:
+    from horus_file_system import get_horus_fs, HorusFileSystem
+    HORUS_FS_AVAILABLE = True
+    print("✅ Horus File System module loaded")
+except ImportError as e:
+    HORUS_FS_AVAILABLE = False
+    print(f"⚠️ Horus File System module not available: {e}")
+
 # ============================================================================
 # Horus Data Connector - Inline Implementation
 # ============================================================================
@@ -115,9 +124,13 @@ horus_connector = None
 current_project_id = None
 annotations_popup_window = None
 
+# Horus File System - for real server access
+horus_fs = None
+
 # Feature flags
 ENABLE_TIMELINE_PLAYLIST = True   # Enable/disable Timeline Playlist feature
 ENABLE_LEGACY_TIMELINE = False    # Disable legacy Timeline Sequence panel
+USE_FILE_SYSTEM_BACKEND = True    # Use new file system backend instead of sample_db
 
 # Timeline Playlist global data
 timeline_playlist_data = []
@@ -2348,10 +2361,19 @@ def create_media_grid_panel():
 
 def setup_horus_integration():
     """Set up Horus data integration."""
-    global horus_connector, search_dock, media_grid_dock
+    global horus_connector, search_dock, media_grid_dock, horus_fs
 
     try:
-        # Initialize Horus connector with resource path
+        # Initialize file system backend first (if available)
+        if USE_FILE_SYSTEM_BACKEND and HORUS_FS_AVAILABLE:
+            if init_file_system_backend():
+                print("✅ Using file system backend for media browsing")
+                # Populate episode filter from file system
+                populate_episode_filter()
+            else:
+                print("⚠️ File system backend not available, falling back to sample_db")
+
+        # Initialize Horus connector with resource path (fallback)
         data_dir = get_resource_path("sample_db")
         print(f"🔍 Looking for Horus database at: {data_dir}")
         horus_connector = get_horus_connector(data_dir)
@@ -2362,26 +2384,33 @@ def setup_horus_integration():
             horus_connector = get_horus_connector("sample_db")
             if not horus_connector.is_available():
                 print("❌ No Horus database found")
-                return False
-        
+                # If file system backend is available, we can still continue
+                if not (horus_fs and horus_fs.access_mode != "none"):
+                    return False
+
         # Get widgets
         search_widget = search_dock.widget() if search_dock else None
         if not search_widget:
             print("Could not find search widget")
             return False
-        
-        # Load projects
-        projects = horus_connector.get_available_projects()
+
+        # Load projects (from sample_db for project selector)
+        projects = horus_connector.get_available_projects() if horus_connector.is_available() else []
         project_selector = search_widget.project_selector
 
         project_selector.clear()
-        project_selector.addItem("Select Project...", "")
+
+        # If using file system backend, add SWA as default project
+        if USE_FILE_SYSTEM_BACKEND and horus_fs and horus_fs.access_mode != "none":
+            project_selector.addItem("SWA (File System)", "SWA")
+        else:
+            project_selector.addItem("Select Project...", "")
 
         for project in projects:
             project_id = project.get('_id', project.get('id', ''))  # Support both _id and id
             project_name = project.get('name', 'Unknown')
             project_selector.addItem(f"{project_name} ({project_id})", project_id)
-        
+
         # Connect signals
         project_selector.currentTextChanged.connect(on_project_changed)
         search_widget.refresh_horus_btn.clicked.connect(refresh_horus_data)
@@ -2692,7 +2721,12 @@ def update_media_table(project_id, media_items):
 
 def apply_filters():
     """Apply filters to the media table."""
-    global search_dock, current_project_id, horus_connector
+    global search_dock, current_project_id, horus_connector, horus_fs
+
+    # Use file system backend if available
+    if USE_FILE_SYSTEM_BACKEND and horus_fs and horus_fs.access_mode != "none":
+        apply_filters_fs()
+        return
 
     try:
         if not current_project_id or not horus_connector:
@@ -2792,28 +2826,239 @@ def update_shot_filter(media_items):
     except Exception as e:
         print(f"Error updating shot filter: {e}")
 
+
+# ============================================================================
+# File System Backend Functions
+# ============================================================================
+
+def init_file_system_backend():
+    """Initialize the Horus file system backend."""
+    global horus_fs
+
+    if not HORUS_FS_AVAILABLE:
+        print("⚠️ File system backend not available")
+        return False
+
+    try:
+        horus_fs = get_horus_fs()
+        if horus_fs.access_mode != "none":
+            print(f"✅ File system backend initialized: {horus_fs.access_mode}")
+            return True
+        else:
+            print("❌ File system backend: No access available")
+            return False
+    except Exception as e:
+        print(f"❌ Error initializing file system backend: {e}")
+        return False
+
+
+def populate_episode_filter():
+    """Populate episode filter from file system."""
+    global search_dock, horus_fs
+
+    if not horus_fs or horus_fs.access_mode == "none":
+        return
+
+    try:
+        search_widget = search_dock.widget() if search_dock else None
+        if not search_widget:
+            return
+
+        episode_filter = search_widget.episode_filter
+        episode_filter.blockSignals(True)
+        episode_filter.clear()
+        episode_filter.addItem("All")
+
+        episodes = horus_fs.list_episodes()
+        for ep in episodes:
+            episode_filter.addItem(ep['name'])
+
+        episode_filter.blockSignals(False)
+        print(f"📁 Loaded {len(episodes)} episodes")
+
+    except Exception as e:
+        print(f"Error populating episode filter: {e}")
+
+
+def populate_sequence_filter(episode: str):
+    """Populate sequence filter based on selected episode."""
+    global search_dock, horus_fs
+
+    if not horus_fs or horus_fs.access_mode == "none":
+        return
+
+    try:
+        search_widget = search_dock.widget() if search_dock else None
+        if not search_widget:
+            return
+
+        sequence_filter = search_widget.sequence_filter
+        sequence_filter.blockSignals(True)
+        sequence_filter.clear()
+        sequence_filter.addItem("All")
+
+        if episode and episode != "All":
+            sequences = horus_fs.list_sequences(episode)
+            for seq in sequences:
+                sequence_filter.addItem(seq['name'])
+
+        sequence_filter.blockSignals(False)
+
+    except Exception as e:
+        print(f"Error populating sequence filter: {e}")
+
+
+def populate_shot_filter_fs(episode: str, sequence: str):
+    """Populate shot filter based on selected episode and sequence."""
+    global search_dock, horus_fs
+
+    if not horus_fs or horus_fs.access_mode == "none":
+        return
+
+    try:
+        search_widget = search_dock.widget() if search_dock else None
+        if not search_widget:
+            return
+
+        shot_filter = search_widget.shot_filter
+        shot_filter.blockSignals(True)
+        shot_filter.clear()
+        shot_filter.addItem("All")
+
+        if episode and episode != "All" and sequence and sequence != "All":
+            shots = horus_fs.list_shots(episode, sequence)
+            for shot in shots:
+                shot_filter.addItem(shot['name'])
+
+        shot_filter.blockSignals(False)
+
+    except Exception as e:
+        print(f"Error populating shot filter: {e}")
+
+
+def apply_filters_fs():
+    """Apply filters using file system backend."""
+    global search_dock, horus_fs
+
+    if not horus_fs or horus_fs.access_mode == "none":
+        return
+
+    try:
+        search_widget = search_dock.widget() if search_dock else None
+        if not search_widget:
+            return
+
+        # Get filter values
+        episode = search_widget.episode_filter.currentText()
+        sequence = search_widget.sequence_filter.currentText()
+        department = search_widget.department_filter.currentText()
+        shot = search_widget.shot_filter.currentText()
+        status = search_widget.status_filter.currentText()
+        search_text = search_widget.search_input.text().lower()
+        latest_only = search_widget.version_toggle.isChecked()
+
+        # Update dependent filters
+        populate_sequence_filter(episode)
+        populate_shot_filter_fs(episode, sequence)
+
+        # Get media files from file system
+        if episode == "All":
+            # No episode selected, show nothing or all
+            media_items = []
+        else:
+            seq = sequence if sequence != "All" else None
+            sh = shot if shot != "All" else None
+            dept = department if department != "All" else None
+            media_items = horus_fs.list_media_files(
+                episode, seq, sh, dept, latest_only=latest_only
+            )
+
+        # Apply status filter
+        if status != "All":
+            media_items = [m for m in media_items if m.get('status', 'submit') == status]
+
+        # Apply search text filter
+        if search_text:
+            media_items = [m for m in media_items
+                          if search_text in m.get('name', '').lower()
+                          or search_text in m.get('file_name', '').lower()]
+
+        # Update table
+        update_media_table_fs(media_items)
+
+    except Exception as e:
+        print(f"Error applying filters (fs): {e}")
+
+
+def update_media_table_fs(media_items):
+    """Update media table with file system data."""
+    global search_dock
+
+    try:
+        from PySide2.QtWidgets import QTableWidgetItem
+        from PySide2.QtCore import Qt
+
+        search_widget = search_dock.widget() if search_dock else None
+        if not search_widget:
+            return
+
+        media_table = search_widget.media_table
+        media_table.setRowCount(0)
+
+        for item in media_items:
+            row = media_table.rowCount()
+            media_table.insertRow(row)
+
+            # Name column: {ep}_{shot}
+            name = item.get('name', 'Unknown')
+            name_item = QTableWidgetItem(name)
+            name_item.setData(Qt.UserRole, item)  # Store full item data
+            media_table.setItem(row, 0, name_item)
+
+            # Version column
+            version = item.get('version', 'v001')
+            version_item = QTableWidgetItem(version)
+            media_table.setItem(row, 1, version_item)
+
+            # Status column with color
+            status = item.get('status', 'submit')
+            status_icon = "🟢" if status == "approved" else "🔴" if status == "need fix" else "🟡"
+            status_item = QTableWidgetItem(f"{status_icon} {status}")
+            media_table.setItem(row, 2, status_item)
+
+        print(f"📊 Updated table with {len(media_items)} items")
+
+    except Exception as e:
+        print(f"Error updating media table (fs): {e}")
+
+
 def on_media_table_double_click(item):
     """Handle double-click on media table item."""
+    global horus_fs
+
     try:
         from PySide2.QtCore import Qt
 
         if not item:
             return
 
-        # Get the media item data from the task entity column (column 1)
+        # Get the media item data from the Name column (column 0)
         row = item.row()
         search_widget = search_dock.widget() if search_dock else None
         if not search_widget:
             return
 
         media_table = search_widget.media_table
-        task_item = media_table.item(row, 1)  # Task Entity column
+        name_item = media_table.item(row, 0)  # Name column stores UserRole data
 
-        if task_item:
-            media_item = task_item.data(Qt.UserRole)
+        if name_item:
+            media_item = name_item.data(Qt.UserRole)
             if media_item:
                 file_path = media_item.get('file_path') or media_item.get('storage_url', '')
                 if file_path:
+                    # Convert path for RV if using file system backend
+                    if horus_fs and horus_fs.access_mode != "none":
+                        file_path = horus_fs.convert_path_for_rv(file_path)
                     print(f"Loading media file: {file_path}")
                     # Load the media file in Open RV
                     load_media_in_rv(file_path)
