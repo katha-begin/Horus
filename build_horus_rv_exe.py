@@ -33,26 +33,32 @@ def install_pyinstaller():
 
 
 def build_executable():
-    """Build the executable using PyInstaller."""
+    """Build the executable using PyInstaller with all necessary files."""
     try:
         print("Building horus-rv.exe...")
 
-        # PyInstaller command
+        # PyInstaller command with additional data files
         cmd = [
             "python", "-m", "PyInstaller",
             "--onefile",                    # Single executable file
             "--name", "horus-rv",          # Output name
             "--console",                   # Keep console window
             "--icon=NONE",                 # No icon for now
+            "--add-data", "rv_horus_integration.py;.",  # Include integration script
+            "--add-data", "sample_db;sample_db",        # Include database files
+            "--add-data", "src;src",                    # Include source packages
+            "--hidden-import", "PySide2.QtWidgets",    # Ensure PySide2 is included
+            "--hidden-import", "PySide2.QtCore",       # Ensure PySide2 is included
+            "--hidden-import", "PySide2.QtGui",        # Ensure PySide2 is included
             "horus_rv_launcher.py"         # Source script
         ]
-        
+
         # Run PyInstaller
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
+
         if result.returncode == 0:
             print("✅ Build successful!")
-            
+
             # Check if executable was created
             exe_path = Path("dist") / "horus-rv.exe"
             if exe_path.exists():
@@ -67,7 +73,7 @@ def build_executable():
             print("STDOUT:", result.stdout)
             print("STDERR:", result.stderr)
             return False
-            
+
     except Exception as e:
         print(f"❌ Error building executable: {e}")
         return False
