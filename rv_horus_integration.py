@@ -621,26 +621,20 @@ def create_timeline_playlist_panel():
         from PySide2.QtWidgets import (
             QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem,
             QFrame, QLabel, QPushButton, QComboBox, QTableWidget, QTableWidgetItem,
-            QAbstractItemView, QHeaderView, QCheckBox
+            QAbstractItemView, QHeaderView, QCheckBox, QSizePolicy
         )
         from PySide2.QtCore import Qt
         from PySide2.QtGui import QColor
 
         widget = QWidget()
+        widget.setMinimumWidth(150)  # Allow compact size
         layout = QVBoxLayout(widget)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
 
         # ===== TOP HALF: Playlist Tree =====
         tree_label = QLabel("Playlists:")
-        tree_label.setStyleSheet("""
-            QLabel {
-                color: #e0e0e0;
-                font-weight: bold;
-                font-size: 12px;
-                padding: 5px;
-            }
-        """)
+        tree_label.setStyleSheet("color: #e0e0e0; font-weight: bold; font-size: 11px;")
         layout.addWidget(tree_label)
 
         # Playlist tree widget
@@ -648,87 +642,70 @@ def create_timeline_playlist_panel():
         playlist_tree.setHeaderHidden(True)
         playlist_tree.setRootIsDecorated(True)
         playlist_tree.setSelectionMode(QAbstractItemView.SingleSelection)
-        playlist_tree.setMaximumHeight(200)  # Limit height to make room for shot table
+        playlist_tree.setMaximumHeight(150)  # Compact height
         playlist_tree.setStyleSheet("""
             QTreeWidget {
                 background-color: #2d2d2d;
                 color: #e0e0e0;
                 border: 1px solid #555555;
                 selection-background-color: #0078d4;
-                outline: none;
             }
-            QTreeWidget::item {
-                padding: 4px;
-                border-bottom: 1px solid #3a3a3a;
-            }
-            QTreeWidget::item:selected {
-                background-color: #0078d4;
-                color: white;
-            }
-            QTreeWidget::item:hover {
-                background-color: #404040;
-            }
+            QTreeWidget::item { padding: 2px; }
+            QTreeWidget::item:selected { background-color: #0078d4; }
         """)
         playlist_tree.itemSelectionChanged.connect(on_playlist_tree_selection_changed)
         playlist_tree.itemDoubleClicked.connect(on_playlist_double_clicked)
         layout.addWidget(playlist_tree)
 
-        # Playlist controls
-        playlist_controls = QFrame()
-        playlist_controls.setFixedHeight(40)
-        playlist_controls.setStyleSheet("""
-            QFrame {
-                background-color: #3a3a3a;
-                border: 1px solid #555555;
-                border-radius: 3px;
-            }
+        # Playlist controls - compact buttons
+        playlist_controls = QHBoxLayout()
+        playlist_controls.setSpacing(2)
+
+        btn_style = """
             QPushButton {
                 background-color: #404040;
                 color: #e0e0e0;
                 border: 1px solid #555555;
-                padding: 5px 10px;
-                border-radius: 2px;
-                font-size: 11px;
+                padding: 3px 6px;
+                font-size: 10px;
             }
-            QPushButton:hover {
-                background-color: #4a4a4a;
-                border-color: #0078d4;
-            }
-        """)
+            QPushButton:hover { background-color: #4a4a4a; }
+        """
 
-        playlist_controls_layout = QHBoxLayout(playlist_controls)
-        playlist_controls_layout.setContentsMargins(5, 5, 5, 5)
-        playlist_controls_layout.setSpacing(5)
-
-        new_playlist_btn = QPushButton("New Playlist")
+        new_playlist_btn = QPushButton("+")
+        new_playlist_btn.setToolTip("New Playlist")
+        new_playlist_btn.setFixedWidth(24)
+        new_playlist_btn.setStyleSheet(btn_style)
         new_playlist_btn.clicked.connect(create_new_playlist)
-        playlist_controls_layout.addWidget(new_playlist_btn)
+        playlist_controls.addWidget(new_playlist_btn)
 
-        duplicate_btn = QPushButton("Duplicate")
+        duplicate_btn = QPushButton("⎘")
+        duplicate_btn.setToolTip("Duplicate")
+        duplicate_btn.setFixedWidth(24)
+        duplicate_btn.setStyleSheet(btn_style)
         duplicate_btn.clicked.connect(duplicate_current_playlist)
-        playlist_controls_layout.addWidget(duplicate_btn)
+        playlist_controls.addWidget(duplicate_btn)
 
-        rename_btn = QPushButton("Rename")
+        rename_btn = QPushButton("✎")
+        rename_btn.setToolTip("Rename")
+        rename_btn.setFixedWidth(24)
+        rename_btn.setStyleSheet(btn_style)
         rename_btn.clicked.connect(rename_current_playlist)
-        playlist_controls_layout.addWidget(rename_btn)
+        playlist_controls.addWidget(rename_btn)
 
-        delete_btn = QPushButton("Delete")
+        delete_btn = QPushButton("✕")
+        delete_btn.setToolTip("Delete")
+        delete_btn.setFixedWidth(24)
+        delete_btn.setStyleSheet(btn_style)
         delete_btn.clicked.connect(delete_current_playlist)
-        playlist_controls_layout.addWidget(delete_btn)
+        playlist_controls.addWidget(delete_btn)
 
-        layout.addWidget(playlist_controls)
+        playlist_controls.addStretch()
+        layout.addLayout(playlist_controls)
 
         # ===== BOTTOM HALF: Shot Table =====
-        shot_label = QLabel("Shots in Playlist: (0)")
-        shot_label.setStyleSheet("""
-            QLabel {
-                color: #e0e0e0;
-                font-weight: bold;
-                font-size: 12px;
-                padding: 5px;
-                margin-top: 10px;
-            }
-        """)
+        shot_label = QLabel("Shots: (0)")
+        shot_label.setStyleSheet("color: #e0e0e0; font-weight: bold; font-size: 11px; margin-top: 5px;")
         layout.addWidget(shot_label)
 
         # Shot table widget - Same format as Navigator: Name, Version, Status
@@ -742,7 +719,6 @@ def create_timeline_playlist_panel():
         shot_table.verticalHeader().setVisible(False)
 
         # Make columns fit content
-        from PySide2.QtWidgets import QHeaderView
         header = shot_table.horizontalHeader()
         header.setStretchLastSection(True)
         header.setSectionResizeMode(0, QHeaderView.Stretch)  # Name - stretch
@@ -2153,72 +2129,100 @@ def create_search_panel():
                                        QTableWidgetItem, QHeaderView)
         from PySide2.QtCore import Qt
 
+        from PySide2.QtWidgets import QSizePolicy
+
         widget = QWidget()
+        widget.setMinimumWidth(150)  # Allow widget to shrink
         layout = QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(4, 4, 4, 4)  # Smaller margins
+        layout.setSpacing(4)
 
         # Header
-        header = QLabel("Search & Navigate - Horus")
-        header.setStyleSheet("font-weight: bold; font-size: 14px; color: #0078d7;")
+        header = QLabel("Navigator")
+        header.setStyleSheet("font-weight: bold; font-size: 12px; color: #0078d7;")
         layout.addWidget(header)
 
         # Horus project selection row
         project_row = QHBoxLayout()
-        project_row.addWidget(QLabel("Project:"))
+        project_row.setSpacing(2)
         project_selector = QComboBox()
         project_selector.setObjectName("project_selector")
+        project_selector.setMinimumWidth(60)
+        project_selector.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         project_row.addWidget(project_selector, 1)
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = QPushButton("↻")  # Compact refresh icon
         refresh_btn.setObjectName("refresh_horus_btn")
-        refresh_btn.setFixedWidth(60)
+        refresh_btn.setFixedWidth(24)
+        refresh_btn.setToolTip("Refresh")
         project_row.addWidget(refresh_btn)
         layout.addLayout(project_row)
 
         # Search input
         search_input = QLineEdit()
-        search_input.setPlaceholderText("Search files...")
+        search_input.setPlaceholderText("Search...")
+        search_input.setMinimumWidth(60)
         layout.addWidget(search_input)
 
         # Filter section - Order: Episode > Sequence > Department > Shot
         filter_frame = QFrame()
         filter_layout = QGridLayout(filter_frame)
-        filter_layout.setContentsMargins(0, 5, 0, 5)
-        filter_layout.setSpacing(4)
+        filter_layout.setContentsMargins(0, 2, 0, 2)
+        filter_layout.setSpacing(2)
+        filter_layout.setColumnStretch(1, 1)  # Combo column stretches
 
         # Row 0: Episode filter
-        filter_layout.addWidget(QLabel("Episode:"), 0, 0)
+        ep_label = QLabel("Ep:")
+        ep_label.setFixedWidth(35)
+        filter_layout.addWidget(ep_label, 0, 0)
         episode_filter = QComboBox()
-        episode_filter.addItems(["All"])  # Will be populated dynamically
+        episode_filter.addItems(["All"])
         episode_filter.setObjectName("episode_filter")
+        episode_filter.setMinimumWidth(50)
+        episode_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         filter_layout.addWidget(episode_filter, 0, 1)
 
         # Row 1: Sequence filter
-        filter_layout.addWidget(QLabel("Sequence:"), 1, 0)
+        seq_label = QLabel("Seq:")
+        seq_label.setFixedWidth(35)
+        filter_layout.addWidget(seq_label, 1, 0)
         sequence_filter = QComboBox()
-        sequence_filter.addItems(["All"])  # Will be populated dynamically
+        sequence_filter.addItems(["All"])
         sequence_filter.setObjectName("sequence_filter")
+        sequence_filter.setMinimumWidth(50)
+        sequence_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         filter_layout.addWidget(sequence_filter, 1, 1)
 
         # Row 2: Department filter
-        filter_layout.addWidget(QLabel("Department:"), 2, 0)
+        dept_label = QLabel("Dept:")
+        dept_label.setFixedWidth(35)
+        filter_layout.addWidget(dept_label, 2, 0)
         department_filter = QComboBox()
         department_filter.addItems(["All", "anim", "comp", "lighting", "layout", "hero"])
         department_filter.setObjectName("department_filter")
+        department_filter.setMinimumWidth(50)
+        department_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         filter_layout.addWidget(department_filter, 2, 1)
 
         # Row 3: Shot filter
-        filter_layout.addWidget(QLabel("Shot:"), 3, 0)
+        shot_label = QLabel("Shot:")
+        shot_label.setFixedWidth(35)
+        filter_layout.addWidget(shot_label, 3, 0)
         shot_filter = QComboBox()
-        shot_filter.addItems(["All"])  # Will be populated dynamically
+        shot_filter.addItems(["All"])
         shot_filter.setObjectName("shot_filter")
+        shot_filter.setMinimumWidth(50)
+        shot_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         filter_layout.addWidget(shot_filter, 3, 1)
 
         # Row 4: Status filter
-        filter_layout.addWidget(QLabel("Status:"), 4, 0)
+        status_label = QLabel("Stat:")
+        status_label.setFixedWidth(35)
+        filter_layout.addWidget(status_label, 4, 0)
         status_filter = QComboBox()
         status_filter.addItems(["All", "submit", "need fix", "approved"])
         status_filter.setObjectName("status_filter")
+        status_filter.setMinimumWidth(50)
+        status_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         filter_layout.addWidget(status_filter, 4, 1)
 
         layout.addWidget(filter_frame)
@@ -4402,20 +4406,20 @@ def create_modular_media_browser():
         # CENTER SECTION: RV Viewer (native)
         # RIGHT SECTION: Comments & Annotations
 
-        # Create Search & Navigate dock (left side) - Narrow, resizable
-        search_dock = QDockWidget("Search & Navigate - Horus", rv_main_window)
+        # Create Search & Navigate dock (left side) - Compact, resizable
+        search_dock = QDockWidget("Navigator", rv_main_window)
         search_dock.setWidget(search_panel)
         search_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        search_dock.setMinimumWidth(180)  # Minimum usable width
+        search_dock.setMinimumWidth(150)  # Compact minimum
         # No max width - fully resizable
 
-        # Create Playlist Manager dock (left side) - Resizable
+        # Create Playlist Manager dock (left side) - Compact, resizable
         playlist_dock = None
         if timeline_playlist_panel:
-            playlist_dock = QDockWidget("Playlist Manager", rv_main_window)
+            playlist_dock = QDockWidget("Playlist", rv_main_window)
             playlist_dock.setWidget(timeline_playlist_panel)
             playlist_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-            playlist_dock.setMinimumWidth(180)  # Minimum usable width
+            playlist_dock.setMinimumWidth(150)  # Compact minimum
             # No max width - fully resizable
 
         # Create comments dock (right side)
