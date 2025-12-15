@@ -38,12 +38,31 @@ WINDOWS_IMAGE_ROOT = "W:"
 # SSH Configuration
 SSH_HOST = "10.100.128.193"
 SSH_USER = "ec2-user"
-SSH_KEY_PATH = None  # Use default key or specify path
+# SSH key path - auto-detect common locations
+def _get_ssh_key_path():
+    """Find SSH key in common locations."""
+    import os
+    possible_paths = [
+        os.path.expanduser("~/.ssh/CaveTeam.pem"),
+        os.path.expandvars("$USERPROFILE/.ssh/CaveTeam.pem"),
+        os.path.expandvars("%USERPROFILE%/.ssh/CaveTeam.pem"),
+        "C:/Users/Admin/.ssh/CaveTeam.pem",
+    ]
+    for p in possible_paths:
+        if os.path.exists(p):
+            return p
+    return None
+
+SSH_KEY_PATH = _get_ssh_key_path()
 
 # Project structure
 PROJECT_NAME = "SWA"
 SCENE_PATH = "all/scene"
 HORUS_DATA_PATH = ".horus"
+
+# Access mode preference: "auto", "local", "ssh"
+# Set to "ssh" to force SSH mode even if local mount exists
+PREFERRED_ACCESS_MODE = "ssh"  # Force SSH for development
 
 
 # ============================================================================
@@ -269,10 +288,30 @@ class HorusFileSystem:
         self.horus_data: str = ""
 
     def auto_detect(self) -> bool:
-        """Auto-detect available access method."""
-        print("🔍 Detecting file system access...")
+        """Auto-detect available access method based on PREFERRED_ACCESS_MODE."""
+        print(f"🔍 Detecting file system access (preferred: {PREFERRED_ACCESS_MODE})...")
 
-        # Try local mount first (Windows)
+        # If SSH is preferred, try SSH first
+        if PREFERRED_ACCESS_MODE == "ssh":
+            if self._try_ssh():
+                return True
+            # Fallback to local if SSH fails
+            if self._try_local():
+                return True
+        # If local is preferred or auto mode
+        else:
+            if self._try_local():
+                return True
+            # Fallback to SSH if local not available
+            if self._try_ssh():
+                return True
+
+        print("❌ No file system access available")
+        return False
+
+    def _try_local(self) -> bool:
+        """Try to use local mount."""
+        # Try Windows mount
         if sys.platform == 'win32':
             win_project = os.path.join(WINDOWS_PROJECT_ROOT, PROJECT_NAME)
             if os.path.isdir(win_project):
@@ -286,7 +325,7 @@ class HorusFileSystem:
                 print(f"✅ Using local mount: {WINDOWS_PROJECT_ROOT}")
                 return True
 
-        # Try local mount (Linux)
+        # Try Linux mount
         linux_project = os.path.join(LINUX_PROJECT_ROOT, PROJECT_NAME)
         if os.path.isdir(linux_project):
             self.provider = LocalFileSystemProvider(
@@ -299,7 +338,10 @@ class HorusFileSystem:
             print(f"✅ Using local mount: {LINUX_PROJECT_ROOT}")
             return True
 
-        # Try SSH
+        return False
+
+    def _try_ssh(self) -> bool:
+        """Try to use SSH connection."""
         print("📡 Trying SSH connection...")
         ssh_provider = SSHFileSystemProvider(SSH_HOST, SSH_USER, SSH_KEY_PATH)
         if ssh_provider.is_available():
@@ -310,8 +352,7 @@ class HorusFileSystem:
             self._setup_paths()
             print(f"✅ Using SSH: {SSH_USER}@{SSH_HOST}")
             return True
-
-        print("❌ No file system access available")
+        print("❌ SSH connection failed")
         return False
 
     def _setup_paths(self):

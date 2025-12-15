@@ -1134,11 +1134,22 @@ def create_timeline_tracks_panel():
 
 def load_timeline_playlist_data():
     """Load playlist data from JSON database."""
-    global timeline_playlist_data
+    global timeline_playlist_data, horus_fs
 
     try:
         import json
         import os
+
+        # Try file system backend first
+        if USE_FILE_SYSTEM_BACKEND and horus_fs and horus_fs.access_mode != "none":
+            playlists = horus_fs.load_playlists()
+            if playlists:
+                timeline_playlist_data = playlists
+                print(f"✅ Loaded {len(timeline_playlist_data)} playlists from file system backend")
+                for playlist in timeline_playlist_data:
+                    clip_count = len(playlist.get('clips', []))
+                    print(f"   - {playlist.get('name', 'Unnamed')} ({clip_count} clips)")
+                return
 
         # Load playlists using resource path for bundled executable
         playlist_file = os.path.join(get_resource_path("sample_db"), "horus_playlists.json")
@@ -1173,9 +1184,19 @@ def load_timeline_playlist_data():
 
 def save_timeline_playlist_data():
     """Save playlist data to JSON database."""
+    global horus_fs
+
     try:
         import json
         import os
+
+        # Try file system backend first
+        if USE_FILE_SYSTEM_BACKEND and horus_fs and horus_fs.access_mode != "none":
+            if horus_fs.save_playlists(timeline_playlist_data):
+                print("✅ Playlist data saved to file system backend")
+                return
+            else:
+                print("⚠️ Failed to save to file system backend, falling back to local")
 
         # Try to save to bundled resource path first, fallback to local
         try:
@@ -2424,42 +2445,56 @@ def setup_horus_integration():
 
 def on_project_changed():
     """Handle project selection change."""
-    global current_project_id, horus_connector, search_dock, media_grid_dock
-    
+    global current_project_id, horus_connector, search_dock, media_grid_dock, horus_fs
+
     try:
         search_widget = search_dock.widget() if search_dock else None
         if not search_widget:
             return
-        
+
         project_id = search_widget.project_selector.currentData()
         if not project_id or project_id == current_project_id:
             return
-        
-        current_project_id = project_id
-        horus_connector.set_current_project(project_id)
 
+        current_project_id = project_id
         print(f"Loading project: {project_id}")
 
-        # Load media
-        media_items = horus_connector.get_media_for_project(project_id)
-        
-        # Update grid
-        populate_media_grid(media_items)
-        
-        # Update media table
-        update_media_table(project_id, media_items)
+        # Use file system backend if available
+        if USE_FILE_SYSTEM_BACKEND and horus_fs and horus_fs.access_mode != "none":
+            # Populate episode filter
+            populate_episode_filter()
+            # Clear other filters
+            search_widget.sequence_filter.clear()
+            search_widget.sequence_filter.addItem("All")
+            search_widget.shot_filter.clear()
+            search_widget.shot_filter.addItem("All")
+            # Clear table (user needs to select episode first)
+            search_widget.media_table.setRowCount(0)
+            print(f"✅ Project {project_id} loaded - Select an episode to see media")
+            return
 
-        # Update shot filter options
-        update_shot_filter(media_items)
-        
-        # Update status
-        media_grid_widget = media_grid_dock.widget() if media_grid_dock else None
-        if media_grid_widget:
-            media_grid_widget.path_label.setText(f"Project: {project_id}")
-            media_grid_widget.status_label.setText(f"Loaded {len(media_items)} items")
-        
-        print(f"Loaded {len(media_items)} media items")
-        
+        # Fallback to horus_connector
+        if horus_connector:
+            horus_connector.set_current_project(project_id)
+            media_items = horus_connector.get_media_for_project(project_id)
+
+            # Update grid
+            populate_media_grid(media_items)
+
+            # Update media table
+            update_media_table(project_id, media_items)
+
+            # Update shot filter options
+            update_shot_filter(media_items)
+
+            # Update status
+            media_grid_widget = media_grid_dock.widget() if media_grid_dock else None
+            if media_grid_widget:
+                media_grid_widget.path_label.setText(f"Project: {project_id}")
+                media_grid_widget.status_label.setText(f"Loaded {len(media_items)} items")
+
+            print(f"Loaded {len(media_items)} media items")
+
     except Exception as e:
         print(f"Error loading project: {e}")
 
