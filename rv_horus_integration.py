@@ -731,27 +731,26 @@ def create_timeline_playlist_panel():
         """)
         layout.addWidget(shot_label)
 
-        # Shot table widget
+        # Shot table widget - Same format as Navigator: Name, Version, Status
         shot_table = QTableWidget()
-        shot_table.setColumnCount(6)
-        shot_table.setHorizontalHeaderLabels([
-            "Shot", "Sequence", "Department", "Version", "Status", "✓"
-        ])
+        shot_table.setColumnCount(3)
+        shot_table.setHorizontalHeaderLabels(["Name", "Version", "Status"])
         shot_table.setSelectionBehavior(QTableWidget.SelectRows)
         shot_table.setSelectionMode(QAbstractItemView.MultiSelection)
         shot_table.setSortingEnabled(True)
         shot_table.setAlternatingRowColors(True)
         shot_table.verticalHeader().setVisible(False)
 
-        # Set column widths
-        shot_table.setColumnWidth(0, 60)   # Shot
-        shot_table.setColumnWidth(1, 70)   # Sequence
-        shot_table.setColumnWidth(2, 90)   # Department
-        shot_table.setColumnWidth(3, 50)   # Version
-        shot_table.setColumnWidth(4, 80)   # Status
-        shot_table.setColumnWidth(5, 30)   # Checkbox
+        # Make columns fit content
+        from PySide2.QtWidgets import QHeaderView
+        header = shot_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(0, QHeaderView.Stretch)  # Name - stretch
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Version
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Status
 
-        shot_table.horizontalHeader().setStretchLastSection(False)
+        # Set row height
+        shot_table.verticalHeader().setDefaultSectionSize(25)
 
         shot_table.setStyleSheet("""
             QTableWidget {
