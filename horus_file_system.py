@@ -447,78 +447,143 @@ class HorusFileSystem:
                          latest_only: bool = True) -> List[Dict]:
         """
         List media files (.mov) with flexible filtering.
-
-        If only episode is provided, list all media under that episode.
-        If sequence is provided, filter to that sequence.
-        And so on...
+        Uses single find command for efficiency.
         """
         if not self.provider:
             return []
 
-        media_files = []
-
-        # Build search paths based on provided filters
+        # Build search path pattern
         if episode and sequence and shot and department:
-            # Specific department
-            paths = [(episode, sequence, shot, department)]
+            search_path = f"{self.scene_base}/{episode}/{sequence}/{shot}/{department}/output"
         elif episode and sequence and shot:
-            # All departments in shot
-            depts = self.list_departments(episode, sequence, shot)
-            paths = [(episode, sequence, shot, d) for d in depts]
+            search_path = f"{self.scene_base}/{episode}/{sequence}/{shot}/*/output"
         elif episode and sequence:
-            # All shots in sequence
-            shots = self.list_shots(episode, sequence)
-            paths = []
-            for s in shots:
-                depts = self.list_departments(episode, sequence, s['name'])
-                for d in depts:
-                    paths.append((episode, sequence, s['name'], d))
+            search_path = f"{self.scene_base}/{episode}/{sequence}/*/*/output"
         elif episode:
-            # All sequences in episode
-            seqs = self.list_sequences(episode)
-            paths = []
-            for seq in seqs:
-                shots = self.list_shots(episode, seq['name'])
-                for s in shots:
-                    depts = self.list_departments(episode, seq['name'], s['name'])
-                    for d in depts:
-                        paths.append((episode, seq['name'], s['name'], d))
+            search_path = f"{self.scene_base}/{episode}/*/*/*/output"
         else:
             return []
 
-        # Scan each path for .mov files
-        for ep, seq, sh, dept in paths:
-            output_path = f"{self.scene_base}/{ep}/{seq}/{sh}/{dept}/output"
-            files = self.provider.list_directory(output_path)
+        # Use find command for SSH (much faster than multiple ls calls)
+        if self.access_mode == "ssh":
+            return self._find_media_files_ssh(search_path, episode, sequence, shot, department, latest_only)
+        else:
+            return self._find_media_files_local(search_path, episode, sequence, shot, department, latest_only)
 
-            # Group by shot to find versions
-            version_map = {}
-            for f in files:
-                if f.endswith('.mov'):
-                    version = self._extract_version(f)
-                    key = f"{ep}_{sh}"
-                    if key not in version_map:
-                        version_map[key] = []
-                    version_map[key].append({
-                        "file_name": f,
-                        "file_path": f"{output_path}/{f}",
-                        "episode": ep,
-                        "sequence": seq,
-                        "shot": sh,
-                        "department": dept,
-                        "version": version,
-                        "name": f"{ep}_{sh}",  # Display name format
-                        "status": "submit"  # Default status, will be loaded from comments
-                    })
+    def _find_media_files_ssh(self, search_path: str, episode: str,
+                               sequence: str, shot: str, department: str,
+                               latest_only: bool) -> List[Dict]:
+        """Find media files using SSH find command."""
+        # Use find command with -name pattern
+        cmd = f"find {search_path} -maxdepth 1 -name '*.mov' 2>/dev/null"
+        success, output = self.provider._run_ssh_command(cmd, timeout=30)
 
-            # Add files (latest only or all)
-            for key, versions in version_map.items():
-                versions.sort(key=lambda x: x['version'], reverse=True)
-                if latest_only:
-                    if versions:
-                        media_files.append(versions[0])
-                else:
-                    media_files.extend(versions)
+        if not success or not output:
+            return []
+
+        media_files = []
+        version_map = {}
+
+        for file_path in output.strip().split('\n'):
+            if not file_path or not file_path.endswith('.mov'):
+                continue
+
+            # Parse path: .../Ep02/sq0020/SH0100/comp/output/file.mov
+            parts = file_path.split('/')
+            try:
+                # Find the episode part and extract metadata
+                ep_idx = next(i for i, p in enumerate(parts) if p.startswith('Ep') or p.startswith('RD'))
+                ep = parts[ep_idx]
+                seq = parts[ep_idx + 1]
+                sh = parts[ep_idx + 2]
+                dept = parts[ep_idx + 3]
+                file_name = parts[-1]
+            except (StopIteration, IndexError):
+                continue
+
+            version = self._extract_version(file_name)
+            key = f"{ep}_{sh}_{dept}"
+
+            media_item = {
+                "file_name": file_name,
+                "file_path": file_path,
+                "episode": ep,
+                "sequence": seq,
+                "shot": sh,
+                "department": dept,
+                "version": version,
+                "name": f"{ep}_{sh}",
+                "status": "submit"
+            }
+
+            if key not in version_map:
+                version_map[key] = []
+            version_map[key].append(media_item)
+
+        # Apply latest_only filter
+        for key, versions in version_map.items():
+            versions.sort(key=lambda x: x['version'], reverse=True)
+            if latest_only:
+                if versions:
+                    media_files.append(versions[0])
+            else:
+                media_files.extend(versions)
+
+        return media_files
+
+    def _find_media_files_local(self, search_path: str, episode: str,
+                                 sequence: str, shot: str, department: str,
+                                 latest_only: bool) -> List[Dict]:
+        """Find media files using local glob."""
+        import glob
+
+        # Convert to glob pattern
+        pattern = os.path.join(search_path.replace('/', os.sep), '*.mov')
+        files = glob.glob(pattern)
+
+        media_files = []
+        version_map = {}
+
+        for file_path in files:
+            file_path = file_path.replace('\\', '/')
+            parts = file_path.split('/')
+            try:
+                ep_idx = next(i for i, p in enumerate(parts) if p.startswith('Ep') or p.startswith('RD'))
+                ep = parts[ep_idx]
+                seq = parts[ep_idx + 1]
+                sh = parts[ep_idx + 2]
+                dept = parts[ep_idx + 3]
+                file_name = parts[-1]
+            except (StopIteration, IndexError):
+                continue
+
+            version = self._extract_version(file_name)
+            key = f"{ep}_{sh}_{dept}"
+
+            media_item = {
+                "file_name": file_name,
+                "file_path": file_path,
+                "episode": ep,
+                "sequence": seq,
+                "shot": sh,
+                "department": dept,
+                "version": version,
+                "name": f"{ep}_{sh}",
+                "status": "submit"
+            }
+
+            if key not in version_map:
+                version_map[key] = []
+            version_map[key].append(media_item)
+
+        # Apply latest_only filter
+        for key, versions in version_map.items():
+            versions.sort(key=lambda x: x['version'], reverse=True)
+            if latest_only:
+                if versions:
+                    media_files.append(versions[0])
+            else:
+                media_files.extend(versions)
 
         return media_files
 
