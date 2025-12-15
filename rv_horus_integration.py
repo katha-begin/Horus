@@ -2237,28 +2237,22 @@ def create_search_panel():
         # Media table header
         layout.addWidget(QLabel("Media Files:"))
 
-        # Media table - Columns: Name ({ep}_{shot}), Version, Status, Path
+        # Media table - Columns: Name ({ep}_{shot}), Version, Status
         media_table = QTableWidget()
-        media_table.setColumnCount(4)
-        media_table.setHorizontalHeaderLabels(["Name", "Version", "Status", "Path"])
+        media_table.setColumnCount(3)
+        media_table.setHorizontalHeaderLabels(["Name", "Version", "Status"])
         media_table.setObjectName("media_table")
         media_table.setSelectionBehavior(QTableWidget.SelectRows)
         media_table.setAlternatingRowColors(True)
         media_table.verticalHeader().setVisible(False)
         media_table.setSortingEnabled(True)
 
-        # Make columns stretch to fill available space
+        # Make columns fit content
         header = media_table.horizontalHeader()
         header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QHeaderView.Interactive)  # Name
+        header.setSectionResizeMode(0, QHeaderView.Stretch)  # Name - stretch
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Version
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Status
-        header.setSectionResizeMode(3, QHeaderView.Stretch)  # Path
-
-        # Set initial column widths
-        media_table.setColumnWidth(0, 100)  # Name
-        media_table.setColumnWidth(1, 50)   # Version
-        media_table.setColumnWidth(2, 70)   # Status
 
         # Set row height
         media_table.verticalHeader().setDefaultSectionSize(25)
@@ -4409,21 +4403,21 @@ def create_modular_media_browser():
         # CENTER SECTION: RV Viewer (native)
         # RIGHT SECTION: Comments & Annotations
 
-        # Create Search & Navigate dock (left side) - RESIZABLE
+        # Create Search & Navigate dock (left side) - Narrow, resizable
         search_dock = QDockWidget("Search & Navigate - Horus", rv_main_window)
         search_dock.setWidget(search_panel)
         search_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        search_dock.setMinimumWidth(200)  # Minimum usable width
-        # No maximum width - fully resizable
+        search_dock.setMinimumWidth(180)  # Minimum usable width
+        search_dock.setMaximumWidth(350)  # Maximum width constraint
 
-        # Create Playlist Manager dock (left side) - RESIZABLE
+        # Create Playlist Manager dock (left side) - Narrow, resizable
         playlist_dock = None
         if timeline_playlist_panel:
             playlist_dock = QDockWidget("Playlist Manager", rv_main_window)
             playlist_dock.setWidget(timeline_playlist_panel)
             playlist_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-            playlist_dock.setMinimumWidth(200)  # Minimum usable width
-            # No maximum width - fully resizable
+            playlist_dock.setMinimumWidth(180)  # Minimum usable width
+            playlist_dock.setMaximumWidth(350)  # Maximum width constraint
 
         # Create comments dock (right side)
         comments_dock = QDockWidget("Comments & Annotations", rv_main_window)
