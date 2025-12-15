@@ -4400,61 +4400,31 @@ def create_modular_media_browser():
         for panel in panels_to_style:
             apply_rv_styling(panel)
         
-        # ===== NEW 3-SECTION LAYOUT =====
-        # LEFT SECTION: Tabbed dock with Search & Navigate + Playlist Manager
+        # ===== NEW 3-SECTION LAYOUT (RV Standard Tabbed Docks) =====
+        # LEFT SECTION: Navigator dock + Playlist dock (tabified together)
         # CENTER SECTION: RV Viewer (native)
         # RIGHT SECTION: Comments & Annotations
 
-        from PySide2.QtWidgets import QTabWidget
+        # Create Search & Navigate dock (left side)
+        search_dock = QDockWidget("Search & Navigate - Horus", rv_main_window)
+        search_dock.setWidget(search_panel)
+        search_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        search_dock.setMinimumWidth(150)  # Half of original 300
+        search_dock.setMaximumWidth(300)  # Half of original 600
 
-        # Create tabbed left dock
-        left_dock = QDockWidget("Navigator & Playlists", rv_main_window)
-        left_dock.setAllowedAreas(Qt.LeftDockWidgetArea)
-        left_dock.setMinimumWidth(300)
-        left_dock.setMaximumWidth(600)
-
-        # Create tab widget
-        left_tabs = QTabWidget()
-        left_tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #555555;
-                background-color: #2d2d2d;
-            }
-            QTabBar::tab {
-                background-color: #3a3a3a;
-                color: #e0e0e0;
-                padding: 8px 16px;
-                border: 1px solid #555555;
-                border-bottom: none;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                margin-right: 2px;
-            }
-            QTabBar::tab:selected {
-                background-color: #0078d4;
-                color: white;
-            }
-            QTabBar::tab:hover {
-                background-color: #4a4a4a;
-            }
-        """)
-
-        # Add tabs
-        left_tabs.addTab(search_panel, "📁 Search & Navigate")
-
-        # Add playlist panel if available
+        # Create Playlist Manager dock (left side)
+        playlist_dock = None
         if timeline_playlist_panel:
-            left_tabs.addTab(timeline_playlist_panel, "📋 Playlist Manager")
-            # Populate playlist tree
-            populate_playlist_tree()
-            print("✅ Playlist tree populated with existing playlists")
-
-        left_dock.setWidget(left_tabs)
+            playlist_dock = QDockWidget("Playlist Manager", rv_main_window)
+            playlist_dock.setWidget(timeline_playlist_panel)
+            playlist_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+            playlist_dock.setMinimumWidth(150)  # Half of original 300
+            playlist_dock.setMaximumWidth(300)  # Half of original 600
 
         # Create comments dock (right side)
         comments_dock = QDockWidget("Comments & Annotations", rv_main_window)
         comments_dock.setWidget(comments_panel)
-        comments_dock.setAllowedAreas(Qt.RightDockWidgetArea)
+        comments_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
         comments_dock.setMinimumWidth(200)
         comments_dock.setMaximumWidth(16777215)
         comments_dock.resize(340, 600)
@@ -4466,28 +4436,41 @@ def create_modular_media_browser():
         media_grid_dock.hide()  # Hidden by default in new layout
 
         # Add dock widgets to RV main window
-        rv_main_window.addDockWidget(Qt.LeftDockWidgetArea, left_dock)
+        rv_main_window.addDockWidget(Qt.LeftDockWidgetArea, search_dock)
+
+        # Add playlist dock and tabify with search dock (RV standard)
+        if playlist_dock:
+            rv_main_window.addDockWidget(Qt.LeftDockWidgetArea, playlist_dock)
+            rv_main_window.tabifyDockWidget(search_dock, playlist_dock)
+            # Make search dock the active tab by default
+            search_dock.raise_()
+            print("✅ Navigator and Playlist docks tabified together (RV standard)")
+
+            # Populate playlist tree
+            populate_playlist_tree()
+            print("✅ Playlist tree populated with existing playlists")
+
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, comments_dock)
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, media_grid_dock)
 
         # Store global references for access from other functions
-        globals()['left_dock'] = left_dock
-        globals()['left_tabs'] = left_tabs
-        globals()['search_dock'] = left_dock  # For backward compatibility
+        globals()['search_dock'] = search_dock
         globals()['comments_dock'] = comments_dock
         globals()['media_grid_dock'] = media_grid_dock
 
-        # Store playlist dock reference if created
-        if timeline_playlist_panel:
-            globals()['timeline_playlist_dock'] = left_dock  # For backward compatibility
+        if playlist_dock:
+            globals()['playlist_dock'] = playlist_dock
+            globals()['timeline_playlist_dock'] = playlist_dock  # For backward compatibility
 
         # Show core panels
-        left_dock.show()
+        search_dock.show()
         comments_dock.show()
+        if playlist_dock:
+            playlist_dock.show()
 
         # New 3-section layout is now active
-        print("✅ 3-Section Layout Active:")
-        print("   LEFT: Navigator & Playlists (Tabbed)")
+        print("✅ 3-Section Layout Active (RV Standard):")
+        print("   LEFT: Navigator + Playlist (Tabbed, width reduced by 50%)")
         print("   CENTER: RV Viewer")
         print("   RIGHT: Comments & Annotations")
         
