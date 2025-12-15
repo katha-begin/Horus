@@ -34,16 +34,17 @@ def get_resource_path(relative_path):
 def find_openrv_executable():
     """Find Open RV executable."""
     possible_paths = [
+        r"D:\Program Files\stage\app\bin\rv.exe",  # Test path - PRIORITY
         r"C:\OpenRv\_build\stage\app\bin\rv.exe",
         r"C:\OpenRV\bin\rv.exe",
         r"C:\Program Files\OpenRV\bin\rv.exe",
         r"C:\Program Files (x86)\OpenRV\bin\rv.exe"
     ]
-    
+
     for path in possible_paths:
         if os.path.exists(path):
             return path
-    
+
     return None
 
 
@@ -85,6 +86,7 @@ def main():
         print("❌ ERROR: Open RV executable not found!")
         print()
         print("Please ensure Open RV is installed in one of these locations:")
+        print("  • D:\\Program Files\\stage\\app\\bin\\rv.exe (Test path)")
         print("  • C:\\OpenRv\\_build\\stage\\app\\bin\\rv.exe")
         print("  • C:\\OpenRV\\bin\\rv.exe")
         print("  • C:\\Program Files\\OpenRV\\bin\\rv.exe")
@@ -159,6 +161,22 @@ def main():
             # Modify the integration code to use bundled resources
             integration_code = update_integration_paths(integration_code)
 
+            # Add project directory to sys.path at the beginning of the script
+            # This ensures horus_file_system can be imported
+            sys_path_inject = f'''
+import sys
+import os
+# Add project directory to path for imports
+project_dir = r"{project_dir}"
+if project_dir not in sys.path:
+    sys.path.insert(0, project_dir)
+os.chdir(project_dir)
+print(f"📁 Working directory: {{os.getcwd()}}")
+print(f"📁 Python path includes: {{project_dir}}")
+
+'''
+            integration_code = sys_path_inject + integration_code
+
             # Create temporary file to avoid command line length limits
             import tempfile
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as temp_file:
@@ -199,7 +217,12 @@ def main():
             input("Press Enter to exit...")
             return 1
 
-        cmd = [rv_exe, "-pyeval", f"exec(open(r'{temp_script_path}', encoding='utf-8').read())"]
+        # Build command with flags and integration script
+        cmd = [
+            rv_exe,
+            "-flags", "ModeManagerPreload=horus_mode",
+            "-pyeval", f"exec(open(r'{temp_script_path}', encoding='utf-8').read())"
+        ]
         
         # Launch Open RV
         print(f"Executing: {' '.join(cmd)}")
