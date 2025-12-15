@@ -10,19 +10,91 @@ to display media data from the Horus application within Open RV.
 
 import sys
 import os
-
-# Add path for MediaBrowser package
-try:
-    project_root = os.getcwd()
-    media_browser_path = os.path.join(project_root, 'src', 'packages', 'media_browser', 'python')
-    sys.path.insert(0, media_browser_path)
-except:
-    pass
-
-# Import Horus data connector
-from media_browser.horus_data_connector import get_horus_connector
+import json
+from pathlib import Path
 
 print("Loading Open RV MediaBrowser with Horus integration...")
+
+# ============================================================================
+# Horus Data Connector - Inline Implementation
+# ============================================================================
+
+class HorusDataConnector:
+    """
+    Connects to Horus JSON database for read-only access.
+    Provides data for MediaBrowser widgets.
+    """
+
+    def __init__(self, data_dir="sample_db"):
+        """Initialize connector with data directory."""
+        self.data_dir = Path(data_dir)
+        self.current_project_id = None
+        print(f"📂 Horus Data Directory: {self.data_dir.absolute()}")
+
+    def _load_json_file(self, filename):
+        """Load JSON file from data directory."""
+        file_path = self.data_dir / filename
+        if file_path.exists():
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                print(f"✅ Loaded {filename}: {len(data) if isinstance(data, list) else 'OK'}")
+                return data
+            except Exception as e:
+                print(f"❌ Error loading {filename}: {e}")
+                return [] if filename.endswith('.json') else {}
+        else:
+            print(f"⚠️  File not found: {file_path}")
+            return [] if filename.endswith('.json') else {}
+
+    def is_available(self):
+        """Check if data directory and files are available."""
+        if not self.data_dir.exists():
+            print(f"❌ Data directory not found: {self.data_dir}")
+            return False
+
+        # Check for at least one data file
+        required_files = ["project_configs.json", "media_records.json"]
+        for filename in required_files:
+            if (self.data_dir / filename).exists():
+                return True
+
+        print(f"⚠️  No data files found in {self.data_dir}")
+        return False
+
+    def set_current_project(self, project_id):
+        """Set the current project ID."""
+        self.current_project_id = project_id
+        print(f"📁 Current project set to: {project_id}")
+
+    def get_available_projects(self):
+        """Get list of available projects."""
+        return self._load_json_file("project_configs.json")
+
+    def get_media_records(self):
+        """Get all media records."""
+        return self._load_json_file("media_records.json")
+
+    def get_media_for_project(self, project_id):
+        """Get media records for specific project."""
+        all_media = self.get_media_records()
+        return [m for m in all_media if m.get("project_id") == project_id]
+
+    def get_playlists(self):
+        """Get all playlists."""
+        return self._load_json_file("horus_playlists.json")
+
+    def get_annotations(self):
+        """Get all annotations."""
+        return self._load_json_file("annotations.json")
+
+    def get_tasks(self):
+        """Get all tasks."""
+        return self._load_json_file("tasks.json")
+
+def get_horus_connector(data_dir="sample_db"):
+    """Factory function to create Horus data connector."""
+    return HorusDataConnector(data_dir)
 
 def get_resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller."""
@@ -544,12 +616,12 @@ def create_reply_widget(reply_data):
         return QWidget()
 
 def create_timeline_playlist_panel():
-    """Create Timeline Playlist panel integrated into Horus-RV."""
+    """Create Playlist Manager panel with tree (top) + shot table (bottom)."""
     try:
         from PySide2.QtWidgets import (
-            QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTreeWidget, QTreeWidgetItem,
-            QScrollArea, QFrame, QLabel, QPushButton, QLineEdit, QComboBox,
-            QMenu, QAction, QMessageBox, QInputDialog, QAbstractItemView, QGridLayout
+            QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem,
+            QFrame, QLabel, QPushButton, QComboBox, QTableWidget, QTableWidgetItem,
+            QAbstractItemView, QHeaderView, QCheckBox
         )
         from PySide2.QtCore import Qt
         from PySide2.QtGui import QColor
@@ -559,42 +631,245 @@ def create_timeline_playlist_panel():
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
 
-        # Header with title and controls
-        header = create_timeline_playlist_header()
-        layout.addWidget(header)
+        # ===== TOP HALF: Playlist Tree =====
+        tree_label = QLabel("Playlists:")
+        tree_label.setStyleSheet("""
+            QLabel {
+                color: #e0e0e0;
+                font-weight: bold;
+                font-size: 12px;
+                padding: 5px;
+            }
+        """)
+        layout.addWidget(tree_label)
 
-        # Main splitter: Playlist Tree (left) | Timeline (right)
-        main_splitter = QSplitter(Qt.Horizontal)
-        main_splitter.setChildrenCollapsible(False)
+        # Playlist tree widget
+        playlist_tree = QTreeWidget()
+        playlist_tree.setHeaderHidden(True)
+        playlist_tree.setRootIsDecorated(True)
+        playlist_tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        playlist_tree.setMaximumHeight(200)  # Limit height to make room for shot table
+        playlist_tree.setStyleSheet("""
+            QTreeWidget {
+                background-color: #2d2d2d;
+                color: #e0e0e0;
+                border: 1px solid #555555;
+                selection-background-color: #0078d4;
+                outline: none;
+            }
+            QTreeWidget::item {
+                padding: 4px;
+                border-bottom: 1px solid #3a3a3a;
+            }
+            QTreeWidget::item:selected {
+                background-color: #0078d4;
+                color: white;
+            }
+            QTreeWidget::item:hover {
+                background-color: #404040;
+            }
+        """)
+        playlist_tree.itemSelectionChanged.connect(on_playlist_tree_selection_changed)
+        playlist_tree.itemDoubleClicked.connect(on_playlist_double_clicked)
+        layout.addWidget(playlist_tree)
 
-        # Left panel: Playlist tree and controls
-        left_panel = create_playlist_tree_panel()
-        main_splitter.addWidget(left_panel)
+        # Playlist controls
+        playlist_controls = QFrame()
+        playlist_controls.setFixedHeight(40)
+        playlist_controls.setStyleSheet("""
+            QFrame {
+                background-color: #3a3a3a;
+                border: 1px solid #555555;
+                border-radius: 3px;
+            }
+            QPushButton {
+                background-color: #404040;
+                color: #e0e0e0;
+                border: 1px solid #555555;
+                padding: 5px 10px;
+                border-radius: 2px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+                border-color: #0078d4;
+            }
+        """)
 
-        # Right panel: Timeline tracks
-        right_panel = create_timeline_tracks_panel()
-        main_splitter.addWidget(right_panel)
+        playlist_controls_layout = QHBoxLayout(playlist_controls)
+        playlist_controls_layout.setContentsMargins(5, 5, 5, 5)
+        playlist_controls_layout.setSpacing(5)
 
-        # Set splitter proportions (30% left, 70% right)
-        main_splitter.setSizes([300, 700])
-        layout.addWidget(main_splitter)
+        new_playlist_btn = QPushButton("New Playlist")
+        new_playlist_btn.clicked.connect(create_new_playlist)
+        playlist_controls_layout.addWidget(new_playlist_btn)
 
-        # Store references
-        widget.main_splitter = main_splitter
-        widget.left_panel = left_panel
-        widget.right_panel = right_panel
+        duplicate_btn = QPushButton("Duplicate")
+        duplicate_btn.clicked.connect(duplicate_current_playlist)
+        playlist_controls_layout.addWidget(duplicate_btn)
+
+        rename_btn = QPushButton("Rename")
+        rename_btn.clicked.connect(rename_current_playlist)
+        playlist_controls_layout.addWidget(rename_btn)
+
+        delete_btn = QPushButton("Delete")
+        delete_btn.clicked.connect(delete_current_playlist)
+        playlist_controls_layout.addWidget(delete_btn)
+
+        layout.addWidget(playlist_controls)
+
+        # ===== BOTTOM HALF: Shot Table =====
+        shot_label = QLabel("Shots in Playlist: (0)")
+        shot_label.setStyleSheet("""
+            QLabel {
+                color: #e0e0e0;
+                font-weight: bold;
+                font-size: 12px;
+                padding: 5px;
+                margin-top: 10px;
+            }
+        """)
+        layout.addWidget(shot_label)
+
+        # Shot table widget
+        shot_table = QTableWidget()
+        shot_table.setColumnCount(6)
+        shot_table.setHorizontalHeaderLabels([
+            "Shot", "Sequence", "Department", "Version", "Status", "✓"
+        ])
+        shot_table.setSelectionBehavior(QTableWidget.SelectRows)
+        shot_table.setSelectionMode(QAbstractItemView.MultiSelection)
+        shot_table.setSortingEnabled(True)
+        shot_table.setAlternatingRowColors(True)
+        shot_table.verticalHeader().setVisible(False)
+
+        # Set column widths
+        shot_table.setColumnWidth(0, 60)   # Shot
+        shot_table.setColumnWidth(1, 70)   # Sequence
+        shot_table.setColumnWidth(2, 90)   # Department
+        shot_table.setColumnWidth(3, 50)   # Version
+        shot_table.setColumnWidth(4, 80)   # Status
+        shot_table.setColumnWidth(5, 30)   # Checkbox
+
+        shot_table.horizontalHeader().setStretchLastSection(False)
+
+        shot_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #2d2d2d;
+                color: #e0e0e0;
+                border: 1px solid #555555;
+                gridline-color: #3a3a3a;
+                selection-background-color: #0078d4;
+            }
+            QTableWidget::item {
+                padding: 5px;
+            }
+            QTableWidget::item:selected {
+                background-color: #0078d4;
+                color: white;
+            }
+            QHeaderView::section {
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                padding: 5px;
+                border: 1px solid #555555;
+                font-weight: bold;
+            }
+        """)
+
+        # Connect handlers (placeholder for now)
+        shot_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        # shot_table.customContextMenuRequested.connect(show_shot_context_menu)
+        # shot_table.itemDoubleClicked.connect(load_shot_in_rv)
+
+        layout.addWidget(shot_table)
+
+        # Shot action controls
+        shot_controls = QFrame()
+        shot_controls.setFixedHeight(40)
+        shot_controls.setStyleSheet("""
+            QFrame {
+                background-color: #3a3a3a;
+                border: 1px solid #555555;
+                border-radius: 3px;
+            }
+            QPushButton {
+                background-color: #404040;
+                color: #e0e0e0;
+                border: 1px solid #555555;
+                padding: 5px 10px;
+                border-radius: 2px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+                border-color: #0078d4;
+            }
+            QComboBox {
+                background-color: #404040;
+                color: #e0e0e0;
+                border: 1px solid #555555;
+                padding: 3px 8px;
+                border-radius: 2px;
+                font-size: 11px;
+            }
+            QLabel {
+                color: #e0e0e0;
+                font-size: 11px;
+            }
+        """)
+
+        shot_controls_layout = QHBoxLayout(shot_controls)
+        shot_controls_layout.setContentsMargins(5, 5, 5, 5)
+        shot_controls_layout.setSpacing(5)
+
+        # Status control
+        shot_controls_layout.addWidget(QLabel("Status:"))
+        status_combo = QComboBox()
+        status_combo.addItems(["submit", "need fix", "approved"])
+        shot_controls_layout.addWidget(status_combo)
+
+        set_status_btn = QPushButton("Set Status")
+        # set_status_btn.clicked.connect(set_selected_shots_status)
+        shot_controls_layout.addWidget(set_status_btn)
+
+        shot_controls_layout.addStretch()
+
+        # Shot management
+        remove_btn = QPushButton("Remove Selected")
+        # remove_btn.clicked.connect(remove_selected_shots)
+        shot_controls_layout.addWidget(remove_btn)
+
+        clear_btn = QPushButton("Clear All")
+        # clear_btn.clicked.connect(clear_all_shots)
+        shot_controls_layout.addWidget(clear_btn)
+
+        # Playback
+        load_rv_btn = QPushButton("Load in RV")
+        # load_rv_btn.clicked.connect(load_selected_shots_in_rv)
+        shot_controls_layout.addWidget(load_rv_btn)
+
+        export_btn = QPushButton("Export")
+        # export_btn.clicked.connect(export_playlist)
+        shot_controls_layout.addWidget(export_btn)
+
+        layout.addWidget(shot_controls)
 
         # Load initial data
         load_timeline_playlist_data()
 
-        # Store widget reference for later population
-        widget._playlist_tree = left_panel.playlist_tree
+        # Store references
+        widget._playlist_tree = playlist_tree
+        widget.playlist_tree = playlist_tree
+        widget.shot_table = shot_table
+        widget.shot_label = shot_label
+        widget.status_combo = status_combo
 
-        print("Timeline Playlist panel created successfully")
+        print("✅ Playlist Manager panel created successfully (UI only)")
         return widget
 
     except Exception as e:
-        print(f"Error creating Timeline Playlist panel: {e}")
+        print(f"Error creating Playlist Manager panel: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -2075,12 +2350,18 @@ def setup_horus_integration():
     global horus_connector, search_dock, media_grid_dock
 
     try:
-        # Initialize Horus connector
-        horus_connector = get_horus_connector()
+        # Initialize Horus connector with resource path
+        data_dir = get_resource_path("sample_db")
+        print(f"🔍 Looking for Horus database at: {data_dir}")
+        horus_connector = get_horus_connector(data_dir)
 
         if not horus_connector.is_available():
-            print("Horus data not available")
-            return False
+            print("⚠️  Horus data not available - using sample data")
+            # Try fallback to local sample_db
+            horus_connector = get_horus_connector("sample_db")
+            if not horus_connector.is_available():
+                print("❌ No Horus database found")
+                return False
         
         # Get widgets
         search_widget = search_dock.widget() if search_dock else None
@@ -2096,7 +2377,7 @@ def setup_horus_integration():
         project_selector.addItem("Select Project...", "")
 
         for project in projects:
-            project_id = project.get('id', '')
+            project_id = project.get('_id', project.get('id', ''))  # Support both _id and id
             project_name = project.get('name', 'Unknown')
             project_selector.addItem(f"{project_name} ({project_id})", project_id)
         
@@ -4119,99 +4400,96 @@ def create_modular_media_browser():
         for panel in panels_to_style:
             apply_rv_styling(panel)
         
-        # Create dock widgets
-        search_dock = QDockWidget("Search & Navigate - Horus", rv_main_window)
-        search_dock.setWidget(search_panel)
-        search_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        # ===== NEW 3-SECTION LAYOUT =====
+        # LEFT SECTION: Tabbed dock with Search & Navigate + Playlist Manager
+        # CENTER SECTION: RV Viewer (native)
+        # RIGHT SECTION: Comments & Annotations
 
-        comments_dock = QDockWidget("Comments & Annotations", rv_main_window)
-        comments_dock.setWidget(comments_panel)
-        comments_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        # Fully resizable panel - user can drag to adjust width
-        comments_dock.setMinimumWidth(200)  # Minimum usable width
-        comments_dock.setMaximumWidth(16777215)  # No maximum width constraint
-        comments_dock.resize(340, 600)  # Default size
+        from PySide2.QtWidgets import QTabWidget
 
-        media_grid_dock = QDockWidget("Media Grid - Horus", rv_main_window)
-        media_grid_dock.setWidget(media_grid_panel)
-        media_grid_dock.setAllowedAreas(Qt.AllDockWidgetAreas)
+        # Create tabbed left dock
+        left_dock = QDockWidget("Navigator & Playlists", rv_main_window)
+        left_dock.setAllowedAreas(Qt.LeftDockWidgetArea)
+        left_dock.setMinimumWidth(300)
+        left_dock.setMaximumWidth(600)
 
-        # Create timeline docks based on feature flags
-        timeline_dock_widget = None
-        timeline_playlist_dock_widget = None
+        # Create tab widget
+        left_tabs = QTabWidget()
+        left_tabs.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #555555;
+                background-color: #2d2d2d;
+            }
+            QTabBar::tab {
+                background-color: #3a3a3a;
+                color: #e0e0e0;
+                padding: 8px 16px;
+                border: 1px solid #555555;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background-color: #0078d4;
+                color: white;
+            }
+            QTabBar::tab:hover {
+                background-color: #4a4a4a;
+            }
+        """)
 
-        if timeline_panel:
-            timeline_dock_widget = QDockWidget("Timeline Sequence (Legacy)", rv_main_window)
-            timeline_dock_widget.setWidget(timeline_panel)
-            timeline_dock_widget.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
-            globals()['timeline_dock'] = timeline_dock_widget
+        # Add tabs
+        left_tabs.addTab(search_panel, "📁 Search & Navigate")
 
+        # Add playlist panel if available
         if timeline_playlist_panel:
-            timeline_playlist_dock_widget = QDockWidget("Timeline Playlist Manager", rv_main_window)
-            timeline_playlist_dock_widget.setWidget(timeline_playlist_panel)
-            timeline_playlist_dock_widget.setAllowedAreas(Qt.AllDockWidgetAreas)
-            timeline_playlist_dock_widget.setMinimumWidth(800)  # Larger minimum for primary interface
-            timeline_playlist_dock_widget.setMinimumHeight(350)  # Reduced by 30% (500 * 0.7 = 350)
-            globals()['timeline_playlist_dock'] = timeline_playlist_dock_widget
-
-            # Now populate the playlist tree since the global dock is set
+            left_tabs.addTab(timeline_playlist_panel, "📋 Playlist Manager")
+            # Populate playlist tree
             populate_playlist_tree()
             print("✅ Playlist tree populated with existing playlists")
 
+        left_dock.setWidget(left_tabs)
+
+        # Create comments dock (right side)
+        comments_dock = QDockWidget("Comments & Annotations", rv_main_window)
+        comments_dock.setWidget(comments_panel)
+        comments_dock.setAllowedAreas(Qt.RightDockWidgetArea)
+        comments_dock.setMinimumWidth(200)
+        comments_dock.setMaximumWidth(16777215)
+        comments_dock.resize(340, 600)
+
+        # Media grid dock (hidden by default, can be shown if needed)
+        media_grid_dock = QDockWidget("Media Grid - Horus", rv_main_window)
+        media_grid_dock.setWidget(media_grid_panel)
+        media_grid_dock.setAllowedAreas(Qt.AllDockWidgetAreas)
+        media_grid_dock.hide()  # Hidden by default in new layout
+
         # Add dock widgets to RV main window
-        rv_main_window.addDockWidget(Qt.LeftDockWidgetArea, search_dock)
+        rv_main_window.addDockWidget(Qt.LeftDockWidgetArea, left_dock)
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, comments_dock)
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, media_grid_dock)
 
-        # Add timeline docks based on what was created
-        if timeline_playlist_dock_widget:
-            # Timeline Playlist Manager as primary timeline interface
-            rv_main_window.addDockWidget(Qt.BottomDockWidgetArea, timeline_playlist_dock_widget)
-            print("✅ Timeline Playlist Manager added as primary timeline interface")
-
-        if timeline_dock_widget:
-            # Legacy timeline dock (only if enabled and no playlist manager)
-            if timeline_playlist_dock_widget:
-                # If both exist, tabify legacy timeline with playlist manager
-                rv_main_window.addDockWidget(Qt.BottomDockWidgetArea, timeline_dock_widget)
-                rv_main_window.tabifyDockWidget(timeline_playlist_dock_widget, timeline_dock_widget)
-                # Ensure playlist manager is the active tab
-                timeline_playlist_dock_widget.raise_()
-                print("✅ Legacy timeline added as secondary tab")
-            else:
-                # Legacy timeline as primary if no playlist manager
-                rv_main_window.addDockWidget(Qt.BottomDockWidgetArea, timeline_dock_widget)
-                print("✅ Legacy timeline added as primary timeline interface")
-
         # Store global references for access from other functions
-        globals()['search_dock'] = search_dock
+        globals()['left_dock'] = left_dock
+        globals()['left_tabs'] = left_tabs
+        globals()['search_dock'] = left_dock  # For backward compatibility
         globals()['comments_dock'] = comments_dock
         globals()['media_grid_dock'] = media_grid_dock
 
-        # Store timeline references based on what was created
-        if timeline_dock_widget:
-            globals()['timeline_dock'] = timeline_dock_widget
-        if timeline_playlist_dock_widget:
-            globals()['timeline_playlist_dock'] = timeline_playlist_dock_widget
+        # Store playlist dock reference if created
+        if timeline_playlist_panel:
+            globals()['timeline_playlist_dock'] = left_dock  # For backward compatibility
 
         # Show core panels
-        search_dock.show()
+        left_dock.show()
         comments_dock.show()
-        media_grid_dock.show()
 
-        # Show timeline panels based on priority
-        if timeline_playlist_dock_widget:
-            timeline_playlist_dock_widget.show()
-            timeline_playlist_dock_widget.raise_()  # Bring to front as primary interface
-            print("✅ Timeline Playlist Manager displayed as primary timeline")
-
-        if timeline_dock_widget:
-            timeline_dock_widget.show()
-            if not timeline_playlist_dock_widget:
-                timeline_dock_widget.raise_()  # Only bring to front if no playlist manager
-                print("✅ Legacy timeline displayed")
-            else:
-                print("✅ Legacy timeline available as secondary tab")
+        # New 3-section layout is now active
+        print("✅ 3-Section Layout Active:")
+        print("   LEFT: Navigator & Playlists (Tabbed)")
+        print("   CENTER: RV Viewer")
+        print("   RIGHT: Comments & Annotations")
         
         # Setup Horus integration
         setup_horus_integration()
