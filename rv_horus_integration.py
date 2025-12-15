@@ -2148,146 +2148,150 @@ def create_timeline_panel():
 def create_search_panel():
     """Create search panel with Horus project selection."""
     try:
-        from PySide2.QtWidgets import (QWidget, QVBoxLayout, QLineEdit,
-                                       QTreeWidget, QCheckBox, QLabel, QTreeWidgetItem,
-                                       QComboBox, QPushButton, QFrame, QTableWidget,
-                                       QGridLayout, QTableWidgetItem, QHeaderView)
+        from PySide2.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
+                                       QCheckBox, QLabel, QComboBox, QPushButton,
+                                       QFrame, QTableWidget, QGridLayout,
+                                       QTableWidgetItem, QHeaderView)
         from PySide2.QtCore import Qt
-        from PySide2.QtCore import Qt
-        
+
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-        
+        layout.setSpacing(6)
+
         # Header
         header = QLabel("Search & Navigate - Horus")
         header.setStyleSheet("font-weight: bold; font-size: 14px; color: #0078d7;")
         layout.addWidget(header)
 
-        # Horus project selection
-        layout.addWidget(QLabel("Horus Project:"))
+        # Horus project selection row
+        project_row = QHBoxLayout()
+        project_row.addWidget(QLabel("Project:"))
         project_selector = QComboBox()
         project_selector.setObjectName("project_selector")
-        layout.addWidget(project_selector)
-
+        project_row.addWidget(project_selector, 1)
         refresh_btn = QPushButton("Refresh")
         refresh_btn.setObjectName("refresh_horus_btn")
-        layout.addWidget(refresh_btn)
-        
+        refresh_btn.setFixedWidth(60)
+        project_row.addWidget(refresh_btn)
+        layout.addLayout(project_row)
+
         # Search input
         search_input = QLineEdit()
         search_input.setPlaceholderText("Search files...")
         layout.addWidget(search_input)
 
-        # Filter section
+        # Filter section - Order: Episode > Sequence > Department > Shot
         filter_frame = QFrame()
         filter_layout = QGridLayout(filter_frame)
-        filter_layout.setContentsMargins(5, 5, 5, 5)
+        filter_layout.setContentsMargins(0, 5, 0, 5)
+        filter_layout.setSpacing(4)
 
-        # Department filter
-        filter_layout.addWidget(QLabel("Department:"), 0, 0)
-        department_filter = QComboBox()
-        department_filter.addItems(["All", "animation", "lighting", "compositing", "fx", "modeling", "rigging"])
-        department_filter.setObjectName("department_filter")
-        filter_layout.addWidget(department_filter, 0, 1)
-
-        # Episode filter
-        filter_layout.addWidget(QLabel("Episode:"), 0, 2)
+        # Row 0: Episode filter
+        filter_layout.addWidget(QLabel("Episode:"), 0, 0)
         episode_filter = QComboBox()
-        episode_filter.addItems(["All", "Ep00", "Ep01", "Ep02"])
+        episode_filter.addItems(["All"])  # Will be populated dynamically
         episode_filter.setObjectName("episode_filter")
-        filter_layout.addWidget(episode_filter, 0, 3)
+        filter_layout.addWidget(episode_filter, 0, 1)
 
-        # Sequence filter
+        # Row 1: Sequence filter
         filter_layout.addWidget(QLabel("Sequence:"), 1, 0)
         sequence_filter = QComboBox()
-        sequence_filter.addItems(["All", "sq0010", "sq0020", "sq0030", "sq0040", "sq0050"])
+        sequence_filter.addItems(["All"])  # Will be populated dynamically
         sequence_filter.setObjectName("sequence_filter")
         filter_layout.addWidget(sequence_filter, 1, 1)
 
-        # Shot filter
-        filter_layout.addWidget(QLabel("Shot:"), 1, 2)
+        # Row 2: Department filter
+        filter_layout.addWidget(QLabel("Department:"), 2, 0)
+        department_filter = QComboBox()
+        department_filter.addItems(["All", "anim", "comp", "lighting", "layout", "hero"])
+        department_filter.setObjectName("department_filter")
+        filter_layout.addWidget(department_filter, 2, 1)
+
+        # Row 3: Shot filter
+        filter_layout.addWidget(QLabel("Shot:"), 3, 0)
         shot_filter = QComboBox()
         shot_filter.addItems(["All"])  # Will be populated dynamically
         shot_filter.setObjectName("shot_filter")
-        filter_layout.addWidget(shot_filter, 1, 3)
+        filter_layout.addWidget(shot_filter, 3, 1)
 
-        # Status filter
-        filter_layout.addWidget(QLabel("Status:"), 2, 0)
+        # Row 4: Status filter
+        filter_layout.addWidget(QLabel("Status:"), 4, 0)
         status_filter = QComboBox()
-        status_filter.addItems(["All", "pending", "under_review", "approved"])
+        status_filter.addItems(["All", "submit", "need fix", "approved"])
         status_filter.setObjectName("status_filter")
-        filter_layout.addWidget(status_filter, 2, 1)
+        filter_layout.addWidget(status_filter, 4, 1)
 
         layout.addWidget(filter_frame)
 
-        # Media table with thumbnails
+        # Version toggle row
+        version_row = QHBoxLayout()
+        version_toggle = QCheckBox("Latest version only")
+        version_toggle.setObjectName("version_toggle")
+        version_toggle.setChecked(True)  # Default to latest only
+        version_toggle.setStyleSheet("QCheckBox { color: #e0e0e0; }")
+        version_row.addWidget(version_toggle)
+        version_row.addStretch()
+        layout.addLayout(version_row)
+
+        # Media table header
         layout.addWidget(QLabel("Media Files:"))
 
+        # Media table - Columns: Name ({ep}_{shot}), Version, Status, Path
         media_table = QTableWidget()
-        media_table.setColumnCount(6)
-        media_table.setHorizontalHeaderLabels(["Thumbnail", "Task Entity", "Name", "Version", "Status", "Created"])
+        media_table.setColumnCount(4)
+        media_table.setHorizontalHeaderLabels(["Name", "Version", "Status", "Path"])
         media_table.setObjectName("media_table")
         media_table.setSelectionBehavior(QTableWidget.SelectRows)
         media_table.setAlternatingRowColors(True)
         media_table.verticalHeader().setVisible(False)
         media_table.setSortingEnabled(True)
 
-        # Scale controls
-        scale_frame = QFrame()
-        scale_layout = QGridLayout(scale_frame)
-        scale_layout.setContentsMargins(2, 2, 2, 2)
+        # Make columns stretch to fill available space
+        header = media_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(0, QHeaderView.Interactive)  # Name
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Version
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Status
+        header.setSectionResizeMode(3, QHeaderView.Stretch)  # Path
 
-        scale_layout.addWidget(QLabel("Scale:"), 0, 0)
-        scale_combo = QComboBox()
-        scale_combo.addItems(["Small", "Medium", "Large"])
-        scale_combo.setCurrentText("Small")  # Default to Small
-        scale_combo.setObjectName("scale_combo")
-        scale_layout.addWidget(scale_combo, 0, 1)
+        # Set initial column widths
+        media_table.setColumnWidth(0, 100)  # Name
+        media_table.setColumnWidth(1, 50)   # Version
+        media_table.setColumnWidth(2, 70)   # Status
 
-        layout.addWidget(scale_frame)
-
-        # Set initial column widths (Small scale)
-        media_table.setColumnWidth(0, 40)   # Thumbnail
-        media_table.setColumnWidth(1, 60)   # Task Entity
-        media_table.setColumnWidth(2, 100)  # Name
-        media_table.setColumnWidth(3, 40)   # Version
-        media_table.setColumnWidth(4, 60)   # Status
-        media_table.setColumnWidth(5, 80)   # Created
-
-        # Set initial row height (Small scale)
-        media_table.verticalHeader().setDefaultSectionSize(30)
+        # Set row height
+        media_table.verticalHeader().setDefaultSectionSize(25)
 
         # Connect double-click signal
         media_table.itemDoubleClicked.connect(on_media_table_double_click)
 
-        layout.addWidget(media_table, 1)
-        
+        layout.addWidget(media_table, 1)  # Stretch factor 1 to fill space
+
         # Connect filter signals
-        department_filter.currentTextChanged.connect(apply_filters)
         episode_filter.currentTextChanged.connect(apply_filters)
         sequence_filter.currentTextChanged.connect(apply_filters)
+        department_filter.currentTextChanged.connect(apply_filters)
         shot_filter.currentTextChanged.connect(apply_filters)
         status_filter.currentTextChanged.connect(apply_filters)
         search_input.textChanged.connect(apply_filters)
-        scale_combo.currentTextChanged.connect(on_scale_changed)
+        version_toggle.stateChanged.connect(apply_filters)
 
         # Store references
         widget.project_selector = project_selector
         widget.refresh_horus_btn = refresh_btn
         widget.media_table = media_table
-        widget.department_filter = department_filter
         widget.episode_filter = episode_filter
         widget.sequence_filter = sequence_filter
+        widget.department_filter = department_filter
         widget.shot_filter = shot_filter
         widget.status_filter = status_filter
         widget.search_input = search_input
-        widget.scale_combo = scale_combo
-        
-        print("Search panel created")
+        widget.version_toggle = version_toggle
+
+        print("Search panel created (new layout)")
         return widget
-        
+
     except Exception as e:
         print(f"Error creating search panel: {e}")
         return None
@@ -4405,21 +4409,21 @@ def create_modular_media_browser():
         # CENTER SECTION: RV Viewer (native)
         # RIGHT SECTION: Comments & Annotations
 
-        # Create Search & Navigate dock (left side)
+        # Create Search & Navigate dock (left side) - RESIZABLE
         search_dock = QDockWidget("Search & Navigate - Horus", rv_main_window)
         search_dock.setWidget(search_panel)
         search_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        search_dock.setMinimumWidth(150)  # Half of original 300
-        search_dock.setMaximumWidth(300)  # Half of original 600
+        search_dock.setMinimumWidth(200)  # Minimum usable width
+        # No maximum width - fully resizable
 
-        # Create Playlist Manager dock (left side)
+        # Create Playlist Manager dock (left side) - RESIZABLE
         playlist_dock = None
         if timeline_playlist_panel:
             playlist_dock = QDockWidget("Playlist Manager", rv_main_window)
             playlist_dock.setWidget(timeline_playlist_panel)
             playlist_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-            playlist_dock.setMinimumWidth(150)  # Half of original 300
-            playlist_dock.setMaximumWidth(300)  # Half of original 600
+            playlist_dock.setMinimumWidth(200)  # Minimum usable width
+            # No maximum width - fully resizable
 
         # Create comments dock (right side)
         comments_dock = QDockWidget("Comments & Annotations", rv_main_window)
