@@ -2382,61 +2382,72 @@ def create_media_grid_panel():
 
 def setup_horus_integration():
     """Set up Horus data integration."""
-    global horus_connector, search_dock, media_grid_dock, horus_fs
+    global horus_connector, search_dock, media_grid_dock, horus_fs, current_project_id
 
     try:
+        # Get widgets first
+        search_widget = search_dock.widget() if search_dock else None
+        if not search_widget:
+            print("Could not find search widget")
+            return False
+
+        project_selector = search_widget.project_selector
+
+        # Block signals during setup to prevent premature triggers
+        project_selector.blockSignals(True)
+        project_selector.clear()
+
         # Initialize file system backend first (if available)
         if USE_FILE_SYSTEM_BACKEND and HORUS_FS_AVAILABLE:
             if init_file_system_backend():
                 print("✅ Using file system backend for media browsing")
-                # Populate episode filter from file system
+                print(f"   Mode: {horus_fs.access_mode}")
+
+                # Add SWA project
+                project_selector.addItem("SWA", "SWA")
+                current_project_id = "SWA"
+
+                # Unblock and connect signals
+                project_selector.blockSignals(False)
+                project_selector.currentTextChanged.connect(on_project_changed)
+                search_widget.refresh_horus_btn.clicked.connect(refresh_horus_data)
+
+                # Populate episodes AFTER signals connected
                 populate_episode_filter()
+
+                print("✅ File system backend ready - SWA project loaded")
+                print("   Select an Episode to browse media files")
+                return True
             else:
                 print("⚠️ File system backend not available, falling back to sample_db")
 
-        # Initialize Horus connector with resource path (fallback)
+        # Fallback: Initialize Horus connector with sample_db
         data_dir = get_resource_path("sample_db")
         print(f"🔍 Looking for Horus database at: {data_dir}")
         horus_connector = get_horus_connector(data_dir)
 
         if not horus_connector.is_available():
             print("⚠️  Horus data not available - using sample data")
-            # Try fallback to local sample_db
             horus_connector = get_horus_connector("sample_db")
             if not horus_connector.is_available():
                 print("❌ No Horus database found")
-                # If file system backend is available, we can still continue
-                if not (horus_fs and horus_fs.access_mode != "none"):
-                    return False
+                project_selector.blockSignals(False)
+                return False
 
-        # Get widgets
-        search_widget = search_dock.widget() if search_dock else None
-        if not search_widget:
-            print("Could not find search widget")
-            return False
-
-        # Load projects (from sample_db for project selector)
-        projects = horus_connector.get_available_projects() if horus_connector.is_available() else []
-        project_selector = search_widget.project_selector
-
-        project_selector.clear()
-
-        # If using file system backend, add SWA as default project
-        if USE_FILE_SYSTEM_BACKEND and horus_fs and horus_fs.access_mode != "none":
-            project_selector.addItem("SWA (File System)", "SWA")
-        else:
-            project_selector.addItem("Select Project...", "")
-
+        # Load projects from sample_db
+        projects = horus_connector.get_available_projects()
+        project_selector.addItem("Select Project...", "")
         for project in projects:
-            project_id = project.get('_id', project.get('id', ''))  # Support both _id and id
+            project_id = project.get('_id', project.get('id', ''))
             project_name = project.get('name', 'Unknown')
             project_selector.addItem(f"{project_name} ({project_id})", project_id)
 
-        # Connect signals
+        # Unblock and connect signals
+        project_selector.blockSignals(False)
         project_selector.currentTextChanged.connect(on_project_changed)
         search_widget.refresh_horus_btn.clicked.connect(refresh_horus_data)
 
-        print(f"Horus integration setup - {len(projects)} projects")
+        print(f"Horus integration setup (sample_db) - {len(projects)} projects")
         return True
 
     except Exception as e:
