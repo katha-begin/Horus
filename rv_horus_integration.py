@@ -1077,14 +1077,23 @@ def create_timeline_playlist_panel():
 
         # Store model reference on widget to prevent garbage collection
         playlist_search._playlist_model = playlist_model
+        playlist_search._playlist_completer = playlist_completer
 
         # Connect signals to show dropdown on click/focus
         def show_dropdown_on_focus():
             """Show all completions when search box gets focus."""
-            if playlist_completer and playlist_model:
-                playlist_completer.setCompletionPrefix("")
-                playlist_completer.complete()
-                print(f"📋 Showing {playlist_model.rowCount()} playlists in dropdown")
+            # Get model from widget (not from closure) to ensure we get updated data
+            model = getattr(playlist_search, '_playlist_model', None)
+            completer = getattr(playlist_search, '_playlist_completer', None)
+            if completer and model:
+                row_count = model.rowCount()
+                print(f"📋 show_dropdown_on_focus: model has {row_count} items")
+                print(f"   Model string list: {model.stringList()}")
+                completer.setCompletionPrefix("")
+                completer.complete()
+                print(f"📋 Showing {row_count} playlists in dropdown")
+            else:
+                print(f"⚠️ show_dropdown_on_focus: completer={completer}, model={model}")
 
         # Use event filter to detect focus/click
         from PySide2.QtCore import QObject, QEvent
