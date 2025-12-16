@@ -3040,6 +3040,11 @@ def setup_horus_integration():
                 # Populate episodes AFTER signals connected
                 populate_episode_filter()
 
+                # NOW reload playlists from file system backend
+                print("📋 Reloading playlists from file system backend...")
+                load_timeline_playlist_data()
+                update_playlist_autocomplete()
+
                 print("✅ File system backend ready - SWA project loaded")
                 print("   Select an Episode to browse media files")
                 return True
