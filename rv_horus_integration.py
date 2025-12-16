@@ -1047,7 +1047,21 @@ def create_timeline_playlist_panel():
         playlist_completer = QCompleter()
         playlist_completer.setCaseSensitivity(Qt.CaseInsensitive)
         playlist_completer.setFilterMode(Qt.MatchContains)
+        playlist_completer.setCompletionMode(QCompleter.PopupCompletion)
+        playlist_completer.setMaxVisibleItems(10)
         playlist_search.setCompleter(playlist_completer)
+
+        # Style the completer popup
+        popup = playlist_completer.popup()
+        if popup:
+            popup.setStyleSheet("""
+                QListView {
+                    background-color: #3a3a3a;
+                    color: #e0e0e0;
+                    border: 1px solid #555555;
+                    selection-background-color: #0078d4;
+                }
+            """)
 
         # Install event filter to show dropdown on mouse click
         from PySide2.QtCore import QObject, QEvent
@@ -1557,7 +1571,7 @@ def update_playlist_autocomplete():
 
 
 def on_playlist_search_changed(text):
-    """Handle playlist search text change - show completer popup."""
+    """Handle playlist search text change - show completer popup with filtered results."""
     global timeline_playlist_dock
 
     if not timeline_playlist_dock or not timeline_playlist_dock.widget():
@@ -1566,10 +1580,11 @@ def on_playlist_search_changed(text):
     try:
         widget = timeline_playlist_dock.widget()
         completer = getattr(widget, 'playlist_completer', None)
-        playlist_search = getattr(widget, 'playlist_search', None)
 
-        if completer and playlist_search:
-            # Always show completer popup (even when empty - show all playlists)
+        if completer:
+            # Set completion prefix to filter results
+            completer.setCompletionPrefix(text)
+            # Show completer popup with filtered results
             completer.complete()
     except Exception as e:
         print(f"❌ Error in search changed: {e}")
