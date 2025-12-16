@@ -5794,10 +5794,6 @@ def create_modular_media_browser():
             search_dock.raise_()
             print("✅ Navigator and Playlist docks tabified together (RV standard)")
 
-            # Populate playlist tree
-            update_playlist_autocomplete()
-            print("✅ Playlist tree populated with existing playlists")
-
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, comments_dock)
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, media_grid_dock)
 
@@ -5809,6 +5805,10 @@ def create_modular_media_browser():
         if playlist_dock:
             globals()['playlist_dock'] = playlist_dock
             globals()['timeline_playlist_dock'] = playlist_dock  # For backward compatibility
+
+            # NOW populate playlist autocomplete (after timeline_playlist_dock is assigned)
+            update_playlist_autocomplete()
+            print("✅ Playlist autocomplete populated with existing playlists")
 
         # Show core panels (defaults, may be overridden by restore_ui_state)
         search_dock.show()
