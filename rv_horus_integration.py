@@ -1028,20 +1028,29 @@ def create_timeline_playlist_panel():
         layout.addWidget(search_label)
 
         # Custom QLineEdit that shows completer dropdown on click/focus
+        from PySide2.QtCore import QTimer
+
         class ClickableSearchEdit(QLineEdit):
             def mousePressEvent(self, event):
                 super().mousePressEvent(event)
-                self._show_all_completions()
+                # Use timer to delay popup (ensures widget is ready)
+                QTimer.singleShot(50, self._show_all_completions)
 
             def focusInEvent(self, event):
                 super().focusInEvent(event)
-                self._show_all_completions()
+                # Use timer to delay popup (ensures widget is ready)
+                QTimer.singleShot(50, self._show_all_completions)
 
             def _show_all_completions(self):
                 completer = self.completer()
-                if completer and completer.model():
-                    completer.setCompletionPrefix("")
-                    completer.complete()
+                if completer:
+                    model = completer.model()
+                    if model and model.rowCount() > 0:
+                        completer.setCompletionPrefix("")
+                        completer.complete()
+                        print(f"📋 Showing {model.rowCount()} playlists in dropdown")
+                    else:
+                        print("⚠️ Completer model is empty")
 
         # Search input with autocomplete (using custom class)
         playlist_search = ClickableSearchEdit()
@@ -1194,9 +1203,16 @@ def create_timeline_playlist_panel():
             for playlist in timeline_playlist_data:
                 name = playlist.get("name", "Unnamed")
                 playlist_names.append(name)
+
+        print(f"📋 Creating autocomplete model with playlists: {playlist_names}")
         model = QStringListModel(playlist_names)
         playlist_completer.setModel(model)
+
+        # Store model reference to prevent garbage collection
+        widget._autocomplete_model = model
+
         print(f"✅ Initial autocomplete populated with {len(playlist_names)} playlists")
+        print(f"   Model row count: {model.rowCount()}")
 
         print("✅ Playlist Manager panel created successfully")
         return widget
