@@ -1778,31 +1778,9 @@ def load_playlist_items_to_table(playlist_data):
             version_item.setFlags(version_item.flags() & ~Qt.ItemIsEditable)  # Read-only
             table.setItem(row, 2, version_item)
 
-            # Status column - DROPDOWN
+            # Status column - DROPDOWN (using shared function)
             status = clip.get("status", "submit")
-            status_combo = QComboBox()
-            status_combo.addItems(["approved", "submit", "need fix", "on hold"])
-            status_combo.setCurrentText(status)
-            status_combo.setStyleSheet("""
-                QComboBox {
-                    background-color: #3a3a3a;
-                    color: #e0e0e0;
-                    border: 1px solid #555555;
-                    padding: 2px 5px;
-                }
-                QComboBox::drop-down {
-                    border: none;
-                }
-                QComboBox QAbstractItemView {
-                    background-color: #3a3a3a;
-                    color: #e0e0e0;
-                    selection-background-color: #0078d4;
-                }
-            """)
-            # Store clip data on combo box for later retrieval
-            status_combo.setProperty("clip_data", clip)
-            status_combo.setProperty("row", row)
-            status_combo.currentTextChanged.connect(on_playlist_status_changed)
+            status_combo = create_status_dropdown(status, clip, on_playlist_status_changed)
             table.setCellWidget(row, 3, status_combo)
 
         print(f"📊 Loaded {len(clips)} clips into playlist table")
@@ -1823,7 +1801,7 @@ def on_playlist_status_changed(new_status):
         if not sender:
             return
 
-        clip_data = sender.property("clip_data")
+        clip_data = sender.property("item_data")  # Using shared property name
         if not clip_data:
             return
 
@@ -3889,7 +3867,7 @@ def update_media_table_fs(media_items):
     global search_dock
 
     try:
-        from PySide2.QtWidgets import QTableWidgetItem
+        from PySide2.QtWidgets import QTableWidgetItem, QComboBox
         from PySide2.QtCore import Qt
 
         search_widget = search_dock.widget() if search_dock else None
@@ -3919,37 +3897,44 @@ def update_media_table_fs(media_items):
             version_item = QTableWidgetItem(version)
             media_table.setItem(row, 2, version_item)
 
-            # Status column - DROPDOWN (same as playlist table)
+            # Status column - DROPDOWN (using shared function)
             status = item.get('status', 'submit')
-            status_combo = QComboBox()
-            status_combo.addItems(["approved", "submit", "need fix", "on hold"])
-            status_combo.setCurrentText(status)
-            status_combo.setStyleSheet("""
-                QComboBox {
-                    background-color: #3a3a3a;
-                    color: #e0e0e0;
-                    border: 1px solid #555555;
-                    padding: 2px 5px;
-                }
-                QComboBox::drop-down {
-                    border: none;
-                }
-                QComboBox QAbstractItemView {
-                    background-color: #3a3a3a;
-                    color: #e0e0e0;
-                    selection-background-color: #0078d4;
-                }
-            """)
-            # Store media item data on combo box for later retrieval
-            status_combo.setProperty("media_item", item)
-            status_combo.setProperty("row", row)
-            status_combo.currentTextChanged.connect(on_navigator_status_changed)
+            status_combo = create_status_dropdown(status, item, on_navigator_status_changed)
             media_table.setCellWidget(row, 3, status_combo)
 
         print(f"📊 Updated table with {len(media_items)} items")
 
     except Exception as e:
         print(f"Error updating media table (fs): {e}")
+
+
+def create_status_dropdown(status, item_data, on_change_callback):
+    """Create a status dropdown widget - SHARED by Navigator and Playlist tables."""
+    from PySide2.QtWidgets import QComboBox
+
+    status_combo = QComboBox()
+    status_combo.addItems(["approved", "submit", "need fix", "on hold"])
+    status_combo.setCurrentText(status)
+    status_combo.setStyleSheet("""
+        QComboBox {
+            background-color: #3a3a3a;
+            color: #e0e0e0;
+            border: 1px solid #555555;
+            padding: 2px 5px;
+        }
+        QComboBox::drop-down {
+            border: none;
+        }
+        QComboBox QAbstractItemView {
+            background-color: #3a3a3a;
+            color: #e0e0e0;
+            selection-background-color: #0078d4;
+        }
+    """)
+    # Store item data on combo box
+    status_combo.setProperty("item_data", item_data)
+    status_combo.currentTextChanged.connect(on_change_callback)
+    return status_combo
 
 
 def on_navigator_status_changed(new_status):
@@ -3964,7 +3949,7 @@ def on_navigator_status_changed(new_status):
         if not sender:
             return
 
-        media_item = sender.property("media_item")
+        media_item = sender.property("item_data")  # Using shared property name
         if not media_item:
             return
 
