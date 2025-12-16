@@ -614,6 +614,9 @@ class HorusFileSystem:
             version = self._extract_version(file_name)
             key = f"{ep}_{sh}_{dept}"
 
+            # Load actual status from JSON file
+            status = self.get_shot_status(ep, seq, sh, dept, version)
+
             media_item = {
                 "file_name": file_name,
                 "file_path": file_path,
@@ -623,7 +626,7 @@ class HorusFileSystem:
                 "department": dept,
                 "version": version,
                 "name": f"{ep}_{sh}",
-                "status": "submit"
+                "status": status
             }
 
             if key not in version_map:
@@ -679,6 +682,9 @@ class HorusFileSystem:
             version = self._extract_version(file_name)
             key = f"{ep}_{sh}_{dept}"
 
+            # Load actual status from JSON file
+            status = self.get_shot_status(ep, seq, sh, dept, version)
+
             media_item = {
                 "file_name": file_name,
                 "file_path": file_path,
@@ -688,7 +694,7 @@ class HorusFileSystem:
                 "department": dept,
                 "version": version,
                 "name": f"{ep}_{sh}",
-                "status": "submit"
+                "status": status
             }
 
             if key not in version_map:
