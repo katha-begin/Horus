@@ -1789,28 +1789,23 @@ def load_playlist_items_to_table(playlist_data):
         print(f"❌ Error loading playlist items: {e}")
 
 
-def on_playlist_status_changed(new_status):
+def on_playlist_status_changed(new_status, combo_box):
     """Handle status change in playlist table - save to JSON (SAME AS NAVIGATOR)."""
     global horus_playlists, current_playlist_id, timeline_playlist_data, horus_fs
 
     print(f"🔔 on_playlist_status_changed called with status: {new_status}")
+    print(f"   combo_box: {combo_box}")
 
     try:
-        # Get the combo box that triggered this
-        from PySide2.QtWidgets import QApplication
-        sender = QApplication.instance().sender()
-
-        print(f"   sender: {sender}")
-
-        if not sender:
-            print("   ❌ No sender found")
+        if not combo_box:
+            print("   ❌ No combo_box provided")
             return
 
-        clip_data = sender.property("item_data")  # Using shared property name
+        clip_data = combo_box.property("item_data")  # Using shared property name
         print(f"   clip_data: {clip_data}")
 
         if not clip_data:
-            print("   ❌ No clip_data found in sender property")
+            print("   ❌ No clip_data found in combo_box property")
             return
 
         # Update status in the clip data
@@ -3949,32 +3944,32 @@ def create_status_dropdown(status, item_data, on_change_callback):
     """)
     # Store item data on combo box
     status_combo.setProperty("item_data", item_data)
-    status_combo.currentTextChanged.connect(on_change_callback)
+
+    # Use lambda to pass both the combo box and the new status
+    # This fixes the sender() issue in Open RV's Qt environment
+    status_combo.currentTextChanged.connect(
+        lambda new_status, combo=status_combo: on_change_callback(new_status, combo)
+    )
     return status_combo
 
 
-def on_navigator_status_changed(new_status):
+def on_navigator_status_changed(new_status, combo_box):
     """Handle status change in Navigator table - save to JSON (SAME AS PLAYLIST)."""
     global horus_fs
 
     print(f"🔔 on_navigator_status_changed called with status: {new_status}")
+    print(f"   combo_box: {combo_box}")
 
     try:
-        # Get the combo box that triggered this
-        from PySide2.QtWidgets import QApplication
-        sender = QApplication.instance().sender()
-
-        print(f"   sender: {sender}")
-
-        if not sender:
-            print("   ❌ No sender found")
+        if not combo_box:
+            print("   ❌ No combo_box provided")
             return
 
-        media_item = sender.property("item_data")  # Using shared property name
+        media_item = combo_box.property("item_data")  # Using shared property name
         print(f"   media_item: {media_item}")
 
         if not media_item:
-            print("   ❌ No media_item found in sender property")
+            print("   ❌ No media_item found in combo_box property")
             return
 
         # Update status in the media item
