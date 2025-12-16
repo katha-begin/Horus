@@ -1579,18 +1579,30 @@ def update_playlist_autocomplete():
     """Update the playlist search autocomplete with available playlists."""
     global timeline_playlist_dock, timeline_playlist_data
 
-    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+    print(f"📋 update_playlist_autocomplete called:")
+    print(f"   timeline_playlist_dock: {timeline_playlist_dock}")
+    print(f"   timeline_playlist_data: {len(timeline_playlist_data) if timeline_playlist_data else 0} playlists")
+
+    if not timeline_playlist_dock:
+        print("   ⚠️ Early return: timeline_playlist_dock is None")
+        return
+    if not timeline_playlist_dock.widget():
+        print("   ⚠️ Early return: timeline_playlist_dock.widget() is None")
         return
 
     try:
         widget = timeline_playlist_dock.widget()
         playlist_search = getattr(widget, 'playlist_search', None)
+        print(f"   playlist_search: {playlist_search}")
         if not playlist_search:
+            print("   ⚠️ Early return: playlist_search is None")
             return
 
         # Get the existing model (stored on the search widget)
         model = getattr(playlist_search, '_playlist_model', None)
+        print(f"   model: {model}")
         if not model:
+            print("   ⚠️ Early return: model is None")
             return
 
         # Get playlist names
@@ -1600,13 +1612,18 @@ def update_playlist_autocomplete():
                 name = playlist.get("name", "Unnamed")
                 playlist_names.append(name)
 
+        print(f"   playlist_names: {playlist_names}")
+
         # Update existing model (don't create new one)
         model.setStringList(playlist_names)
 
         print(f"✅ Updated autocomplete with {len(playlist_names)} playlists")
+        print(f"   Model now has: {model.rowCount()} rows, stringList: {model.stringList()}")
 
     except Exception as e:
         print(f"❌ Error updating playlist autocomplete: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def on_playlist_search_changed(text):
