@@ -1027,9 +1027,25 @@ def create_timeline_playlist_panel():
         search_label.setStyleSheet("color: #e0e0e0; font-weight: bold; font-size: 11px;")
         layout.addWidget(search_label)
 
-        # Search input with autocomplete
-        playlist_search = QLineEdit()
-        playlist_search.setPlaceholderText("🔍 Search playlist...")
+        # Custom QLineEdit that shows completer dropdown on click/focus
+        class ClickableSearchEdit(QLineEdit):
+            def mousePressEvent(self, event):
+                super().mousePressEvent(event)
+                self._show_all_completions()
+
+            def focusInEvent(self, event):
+                super().focusInEvent(event)
+                self._show_all_completions()
+
+            def _show_all_completions(self):
+                completer = self.completer()
+                if completer and completer.model():
+                    completer.setCompletionPrefix("")
+                    completer.complete()
+
+        # Search input with autocomplete (using custom class)
+        playlist_search = ClickableSearchEdit()
+        playlist_search.setPlaceholderText("Search playlist...")
         playlist_search.setStyleSheet("""
             QLineEdit {
                 background-color: #3a3a3a;
@@ -1062,24 +1078,6 @@ def create_timeline_playlist_panel():
                     selection-background-color: #0078d4;
                 }
             """)
-
-        # Install event filter to show dropdown on mouse click
-        from PySide2.QtCore import QObject, QEvent
-
-        class PlaylistSearchFilter(QObject):
-            def eventFilter(self, obj, event):
-                if event.type() == QEvent.MouseButtonPress:
-                    # Show all playlists when clicking on search box
-                    completer = obj.completer()
-                    if completer:
-                        completer.setCompletionPrefix("")
-                        completer.complete()
-                return False
-
-        search_filter = PlaylistSearchFilter(playlist_search)
-        playlist_search.installEventFilter(search_filter)
-        # Keep reference to prevent garbage collection
-        playlist_search._search_filter = search_filter
 
         layout.addWidget(playlist_search)
 
