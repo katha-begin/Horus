@@ -1027,33 +1027,8 @@ def create_timeline_playlist_panel():
         search_label.setStyleSheet("color: #e0e0e0; font-weight: bold; font-size: 11px;")
         layout.addWidget(search_label)
 
-        # Custom QLineEdit that shows completer dropdown on click/focus
-        from PySide2.QtCore import QTimer
-
-        class ClickableSearchEdit(QLineEdit):
-            def mousePressEvent(self, event):
-                super().mousePressEvent(event)
-                # Use timer to delay popup (ensures widget is ready)
-                QTimer.singleShot(50, self._show_all_completions)
-
-            def focusInEvent(self, event):
-                super().focusInEvent(event)
-                # Use timer to delay popup (ensures widget is ready)
-                QTimer.singleShot(50, self._show_all_completions)
-
-            def _show_all_completions(self):
-                completer = self.completer()
-                if completer:
-                    model = completer.model()
-                    if model and model.rowCount() > 0:
-                        completer.setCompletionPrefix("")
-                        completer.complete()
-                        print(f"📋 Showing {model.rowCount()} playlists in dropdown")
-                    else:
-                        print("⚠️ Completer model is empty")
-
-        # Search input with autocomplete (using custom class)
-        playlist_search = ClickableSearchEdit()
+        # Search input with autocomplete
+        playlist_search = QLineEdit()
         playlist_search.setPlaceholderText("Search playlist...")
         playlist_search.setStyleSheet("""
             QLineEdit {
@@ -1068,15 +1043,19 @@ def create_timeline_playlist_panel():
             }
         """)
 
-        # Completer for autocomplete
-        playlist_completer = QCompleter()
+        # Create completer with an EMPTY model first (will be populated after data loads)
+        from PySide2.QtCore import QStringListModel
+        playlist_model = QStringListModel([])
+
+        playlist_completer = QCompleter(playlist_model)
         playlist_completer.setCaseSensitivity(Qt.CaseInsensitive)
         playlist_completer.setFilterMode(Qt.MatchContains)
         playlist_completer.setCompletionMode(QCompleter.PopupCompletion)
         playlist_completer.setMaxVisibleItems(10)
+        playlist_completer.setWidget(playlist_search)  # Explicitly set widget
         playlist_search.setCompleter(playlist_completer)
 
-        # Style the completer popup
+        # Style the completer popup (after model is set, popup exists)
         popup = playlist_completer.popup()
         if popup:
             popup.setStyleSheet("""
@@ -1085,8 +1064,42 @@ def create_timeline_playlist_panel():
                     color: #e0e0e0;
                     border: 1px solid #555555;
                     selection-background-color: #0078d4;
+                    font-size: 12px;
+                    padding: 2px;
+                }
+                QListView::item {
+                    padding: 4px;
+                }
+                QListView::item:selected {
+                    background-color: #0078d4;
                 }
             """)
+
+        # Store model reference on widget to prevent garbage collection
+        playlist_search._playlist_model = playlist_model
+
+        # Connect signals to show dropdown on click/focus
+        def show_dropdown_on_focus():
+            """Show all completions when search box gets focus."""
+            if playlist_completer and playlist_model:
+                playlist_completer.setCompletionPrefix("")
+                playlist_completer.complete()
+                print(f"📋 Showing {playlist_model.rowCount()} playlists in dropdown")
+
+        # Use event filter to detect focus/click
+        from PySide2.QtCore import QObject, QEvent
+
+        class SearchFocusFilter(QObject):
+            def eventFilter(self, obj, event):
+                if event.type() == QEvent.FocusIn or event.type() == QEvent.MouseButtonPress:
+                    # Delay slightly to ensure widget is ready
+                    from PySide2.QtCore import QTimer
+                    QTimer.singleShot(100, show_dropdown_on_focus)
+                return False
+
+        focus_filter = SearchFocusFilter(playlist_search)
+        playlist_search.installEventFilter(focus_filter)
+        playlist_search._focus_filter = focus_filter  # Keep reference
 
         layout.addWidget(playlist_search)
 
@@ -1195,20 +1208,21 @@ def create_timeline_playlist_panel():
         # Load initial data
         load_timeline_playlist_data()
 
-        # Populate autocomplete with loaded playlists directly here
-        # (since timeline_playlist_dock isn't set yet, we do it manually)
-        from PySide2.QtCore import QStringListModel
+        # Populate autocomplete with loaded playlists
+        # Update the existing model (created earlier) with playlist names
         playlist_names = []
         if timeline_playlist_data:
             for playlist in timeline_playlist_data:
                 name = playlist.get("name", "Unnamed")
                 playlist_names.append(name)
 
-        print(f"📋 Creating autocomplete model with playlists: {playlist_names}")
-        model = QStringListModel(playlist_names)
-        playlist_completer.setModel(model)
+        print(f"📋 Populating autocomplete model with playlists: {playlist_names}")
 
-        # Store model reference to prevent garbage collection
+        # Update the model that's already attached to the completer
+        model = playlist_search._playlist_model
+        model.setStringList(playlist_names)
+
+        # Store additional reference on widget
         widget._autocomplete_model = model
 
         print(f"✅ Initial autocomplete populated with {len(playlist_names)} playlists")
@@ -1560,11 +1574,14 @@ def update_playlist_autocomplete():
         return
 
     try:
-        from PySide2.QtCore import QStringListModel
-
         widget = timeline_playlist_dock.widget()
-        completer = getattr(widget, 'playlist_completer', None)
-        if not completer:
+        playlist_search = getattr(widget, 'playlist_search', None)
+        if not playlist_search:
+            return
+
+        # Get the existing model (stored on the search widget)
+        model = getattr(playlist_search, '_playlist_model', None)
+        if not model:
             return
 
         # Get playlist names
@@ -1574,9 +1591,8 @@ def update_playlist_autocomplete():
                 name = playlist.get("name", "Unnamed")
                 playlist_names.append(name)
 
-        # Update completer model
-        model = QStringListModel(playlist_names)
-        completer.setModel(model)
+        # Update existing model (don't create new one)
+        model.setStringList(playlist_names)
 
         print(f"✅ Updated autocomplete with {len(playlist_names)} playlists")
 
