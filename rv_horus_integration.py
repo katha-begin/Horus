@@ -654,119 +654,137 @@ def create_reply_widget(reply_data):
         return QWidget()
 
 def create_timeline_playlist_panel():
-    """Create Playlist Manager panel with tree (top) + shot table (bottom)."""
+    """Create Playlist Manager panel with search (top) + items table (bottom).
+
+    Layout:
+    - TOP: Playlist search with autocomplete + control buttons
+    - INDICATOR: Current playlist label
+    - BOTTOM: Playlist items table (same as Navigator: Name | Dept | Version | Status)
+    """
     try:
         from PySide2.QtWidgets import (
-            QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem,
-            QFrame, QLabel, QPushButton, QComboBox, QTableWidget, QTableWidgetItem,
-            QAbstractItemView, QHeaderView, QCheckBox, QSizePolicy
+            QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QCompleter,
+            QFrame, QLabel, QPushButton, QTableWidget, QTableWidgetItem,
+            QAbstractItemView, QHeaderView, QMenu
         )
-        from PySide2.QtCore import Qt
+        from PySide2.QtCore import Qt, QStringListModel
         from PySide2.QtGui import QColor
 
         widget = QWidget()
-        widget.setMinimumWidth(150)  # Allow compact size
+        widget.setMinimumWidth(150)
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        # ===== TOP HALF: Playlist Tree =====
-        tree_label = QLabel("Playlists:")
-        tree_label.setStyleSheet("color: #e0e0e0; font-weight: bold; font-size: 11px;")
-        layout.addWidget(tree_label)
+        # ===== TOP: Playlist Search with Autocomplete =====
+        search_label = QLabel("Playlist:")
+        search_label.setStyleSheet("color: #e0e0e0; font-weight: bold; font-size: 11px;")
+        layout.addWidget(search_label)
 
-        # Playlist tree widget
-        playlist_tree = QTreeWidget()
-        playlist_tree.setHeaderHidden(True)
-        playlist_tree.setRootIsDecorated(True)
-        playlist_tree.setSelectionMode(QAbstractItemView.SingleSelection)
-        playlist_tree.setMaximumHeight(150)  # Compact height
-        playlist_tree.setStyleSheet("""
-            QTreeWidget {
-                background-color: #2d2d2d;
+        # Search input with autocomplete
+        playlist_search = QLineEdit()
+        playlist_search.setPlaceholderText("🔍 Search playlist...")
+        playlist_search.setStyleSheet("""
+            QLineEdit {
+                background-color: #3a3a3a;
                 color: #e0e0e0;
                 border: 1px solid #555555;
-                selection-background-color: #0078d4;
+                padding: 5px;
+                border-radius: 3px;
             }
-            QTreeWidget::item { padding: 2px; }
-            QTreeWidget::item:selected { background-color: #0078d4; }
+            QLineEdit:focus {
+                border-color: #0078d4;
+            }
         """)
-        playlist_tree.itemSelectionChanged.connect(on_playlist_tree_selection_changed)
-        playlist_tree.itemDoubleClicked.connect(on_playlist_double_clicked)
-        layout.addWidget(playlist_tree)
 
-        # Playlist controls - compact buttons
-        playlist_controls = QHBoxLayout()
-        playlist_controls.setSpacing(2)
+        # Completer for autocomplete
+        playlist_completer = QCompleter()
+        playlist_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        playlist_completer.setFilterMode(Qt.MatchContains)
+        playlist_search.setCompleter(playlist_completer)
+        layout.addWidget(playlist_search)
 
+        # ===== Control Buttons =====
         btn_style = """
             QPushButton {
                 background-color: #404040;
                 color: #e0e0e0;
                 border: 1px solid #555555;
-                padding: 3px 6px;
+                padding: 4px 8px;
                 font-size: 10px;
+                border-radius: 2px;
             }
-            QPushButton:hover { background-color: #4a4a4a; }
+            QPushButton:hover { background-color: #4a4a4a; border-color: #0078d4; }
         """
 
-        new_playlist_btn = QPushButton("+")
-        new_playlist_btn.setToolTip("New Playlist")
-        new_playlist_btn.setFixedWidth(24)
-        new_playlist_btn.setStyleSheet(btn_style)
-        new_playlist_btn.clicked.connect(create_new_playlist)
-        playlist_controls.addWidget(new_playlist_btn)
+        controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(4)
 
-        duplicate_btn = QPushButton("⎘")
-        duplicate_btn.setToolTip("Duplicate")
-        duplicate_btn.setFixedWidth(24)
-        duplicate_btn.setStyleSheet(btn_style)
-        duplicate_btn.clicked.connect(duplicate_current_playlist)
-        playlist_controls.addWidget(duplicate_btn)
+        new_btn = QPushButton("+ New")
+        new_btn.setStyleSheet(btn_style)
+        new_btn.clicked.connect(create_new_playlist)
+        controls_layout.addWidget(new_btn)
 
-        rename_btn = QPushButton("✎")
-        rename_btn.setToolTip("Rename")
-        rename_btn.setFixedWidth(24)
+        rename_btn = QPushButton("✎ Rename")
         rename_btn.setStyleSheet(btn_style)
         rename_btn.clicked.connect(rename_current_playlist)
-        playlist_controls.addWidget(rename_btn)
+        controls_layout.addWidget(rename_btn)
 
-        delete_btn = QPushButton("✕")
-        delete_btn.setToolTip("Delete")
-        delete_btn.setFixedWidth(24)
+        delete_btn = QPushButton("✕ Delete")
         delete_btn.setStyleSheet(btn_style)
         delete_btn.clicked.connect(delete_current_playlist)
-        playlist_controls.addWidget(delete_btn)
+        controls_layout.addWidget(delete_btn)
 
-        playlist_controls.addStretch()
-        layout.addLayout(playlist_controls)
+        play_btn = QPushButton("▶ Play All")
+        play_btn.setStyleSheet(btn_style.replace("#404040", "#0078d4"))
+        play_btn.clicked.connect(play_current_playlist)
+        controls_layout.addWidget(play_btn)
 
-        # ===== BOTTOM HALF: Shot Table =====
-        shot_label = QLabel("Shots: (0)")
-        shot_label.setStyleSheet("color: #e0e0e0; font-weight: bold; font-size: 11px; margin-top: 5px;")
-        layout.addWidget(shot_label)
+        controls_layout.addStretch()
+        layout.addLayout(controls_layout)
 
-        # Shot table widget - Same format as Navigator: Name, Version, Status
-        shot_table = QTableWidget()
-        shot_table.setColumnCount(3)
-        shot_table.setHorizontalHeaderLabels(["Name", "Version", "Status"])
-        shot_table.setSelectionBehavior(QTableWidget.SelectRows)
-        shot_table.setSelectionMode(QAbstractItemView.MultiSelection)
-        shot_table.setSortingEnabled(True)
-        shot_table.setAlternatingRowColors(True)
-        shot_table.verticalHeader().setVisible(False)
+        # ===== Current Playlist Indicator =====
+        current_label = QLabel("📋 Current: No playlist selected")
+        current_label.setStyleSheet("""
+            QLabel {
+                background-color: #0078d4;
+                color: white;
+                padding: 6px 10px;
+                border-radius: 3px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+        """)
+        layout.addWidget(current_label)
 
-        # Make columns fit content
-        header = shot_table.horizontalHeader()
+        # ===== BOTTOM: Playlist Items Table (same as Navigator) =====
+        # Table: Name | Dept | Version | Status
+        playlist_table = QTableWidget()
+        playlist_table.setColumnCount(4)
+        playlist_table.setHorizontalHeaderLabels(["Name", "Dept", "Version", "Status"])
+        playlist_table.setSelectionBehavior(QTableWidget.SelectRows)
+        playlist_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        playlist_table.setSortingEnabled(True)
+        playlist_table.setAlternatingRowColors(True)
+        playlist_table.verticalHeader().setVisible(False)
+
+        # Enable drag and drop for reordering
+        playlist_table.setDragEnabled(True)
+        playlist_table.setAcceptDrops(True)
+        playlist_table.setDragDropMode(QAbstractItemView.InternalMove)
+        playlist_table.setDefaultDropAction(Qt.MoveAction)
+
+        # Column sizing (same as Navigator)
+        header = playlist_table.horizontalHeader()
         header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QHeaderView.Stretch)  # Name - stretch
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Version
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Status
+        header.setSectionResizeMode(0, QHeaderView.Stretch)  # Name
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Dept
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Version
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Status
 
-        # Set row height
-        shot_table.verticalHeader().setDefaultSectionSize(25)
+        playlist_table.verticalHeader().setDefaultSectionSize(25)
 
-        shot_table.setStyleSheet("""
+        playlist_table.setStyleSheet("""
             QTableWidget {
                 background-color: #2d2d2d;
                 color: #e0e0e0;
@@ -774,13 +792,8 @@ def create_timeline_playlist_panel():
                 gridline-color: #3a3a3a;
                 selection-background-color: #0078d4;
             }
-            QTableWidget::item {
-                padding: 5px;
-            }
-            QTableWidget::item:selected {
-                background-color: #0078d4;
-                color: white;
-            }
+            QTableWidget::item { padding: 5px; }
+            QTableWidget::item:selected { background-color: #0078d4; color: white; }
             QHeaderView::section {
                 background-color: #3a3a3a;
                 color: #e0e0e0;
@@ -790,95 +803,29 @@ def create_timeline_playlist_panel():
             }
         """)
 
-        # Connect handlers (placeholder for now)
-        shot_table.setContextMenuPolicy(Qt.CustomContextMenu)
-        # shot_table.customContextMenuRequested.connect(show_shot_context_menu)
-        # shot_table.itemDoubleClicked.connect(load_shot_in_rv)
+        # Context menu for right-click
+        playlist_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        playlist_table.customContextMenuRequested.connect(on_playlist_table_context_menu)
 
-        layout.addWidget(shot_table)
+        # Double-click to load in RV
+        playlist_table.itemDoubleClicked.connect(on_playlist_item_double_click)
 
-        # Shot action controls
-        shot_controls = QFrame()
-        shot_controls.setFixedHeight(40)
-        shot_controls.setStyleSheet("""
-            QFrame {
-                background-color: #3a3a3a;
-                border: 1px solid #555555;
-                border-radius: 3px;
-            }
-            QPushButton {
-                background-color: #404040;
-                color: #e0e0e0;
-                border: 1px solid #555555;
-                padding: 5px 10px;
-                border-radius: 2px;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #4a4a4a;
-                border-color: #0078d4;
-            }
-            QComboBox {
-                background-color: #404040;
-                color: #e0e0e0;
-                border: 1px solid #555555;
-                padding: 3px 8px;
-                border-radius: 2px;
-                font-size: 11px;
-            }
-            QLabel {
-                color: #e0e0e0;
-                font-size: 11px;
-            }
-        """)
+        layout.addWidget(playlist_table, 1)  # Stretch factor 1
 
-        shot_controls_layout = QHBoxLayout(shot_controls)
-        shot_controls_layout.setContentsMargins(5, 5, 5, 5)
-        shot_controls_layout.setSpacing(5)
-
-        # Status control
-        shot_controls_layout.addWidget(QLabel("Status:"))
-        status_combo = QComboBox()
-        status_combo.addItems(["submit", "need fix", "approved"])
-        shot_controls_layout.addWidget(status_combo)
-
-        set_status_btn = QPushButton("Set Status")
-        # set_status_btn.clicked.connect(set_selected_shots_status)
-        shot_controls_layout.addWidget(set_status_btn)
-
-        shot_controls_layout.addStretch()
-
-        # Shot management
-        remove_btn = QPushButton("Remove Selected")
-        # remove_btn.clicked.connect(remove_selected_shots)
-        shot_controls_layout.addWidget(remove_btn)
-
-        clear_btn = QPushButton("Clear All")
-        # clear_btn.clicked.connect(clear_all_shots)
-        shot_controls_layout.addWidget(clear_btn)
-
-        # Playback
-        load_rv_btn = QPushButton("Load in RV")
-        # load_rv_btn.clicked.connect(load_selected_shots_in_rv)
-        shot_controls_layout.addWidget(load_rv_btn)
-
-        export_btn = QPushButton("Export")
-        # export_btn.clicked.connect(export_playlist)
-        shot_controls_layout.addWidget(export_btn)
-
-        layout.addWidget(shot_controls)
+        # ===== Connect signals =====
+        playlist_search.textChanged.connect(on_playlist_search_changed)
+        playlist_completer.activated.connect(on_playlist_selected_from_completer)
 
         # Load initial data
         load_timeline_playlist_data()
 
         # Store references
-        widget._playlist_tree = playlist_tree
-        widget.playlist_tree = playlist_tree
-        widget.shot_table = shot_table
-        widget.shot_label = shot_label
-        widget.status_combo = status_combo
+        widget.playlist_search = playlist_search
+        widget.playlist_completer = playlist_completer
+        widget.current_label = current_label
+        widget.playlist_table = playlist_table
 
-        print("✅ Playlist Manager panel created successfully (UI only)")
+        print("✅ Playlist Manager panel created successfully")
         return widget
 
     except Exception as e:
@@ -1216,198 +1163,312 @@ def save_timeline_playlist_data():
         import traceback
         traceback.print_exc()
 
-def populate_playlist_tree():
-    """Populate the playlist tree with data."""
-    global timeline_playlist_dock
-
-    print(f"🌳 Populating playlist tree...")
-    print(f"   timeline_playlist_dock: {timeline_playlist_dock is not None}")
-    print(f"   timeline_playlist_data: {len(timeline_playlist_data) if timeline_playlist_data else 0} playlists")
+def update_playlist_autocomplete():
+    """Update the playlist search autocomplete with available playlists."""
+    global timeline_playlist_dock, timeline_playlist_data
 
     if not timeline_playlist_dock or not timeline_playlist_dock.widget():
-        print("❌ Timeline playlist dock not available for tree population")
         return
 
     try:
-        from PySide2.QtWidgets import QTreeWidgetItem
-        from PySide2.QtCore import Qt
-        from PySide2.QtGui import QColor
+        from PySide2.QtCore import QStringListModel
 
         widget = timeline_playlist_dock.widget()
-        playlist_tree = widget.left_panel.playlist_tree
-        playlist_tree.clear()
-
-        if not timeline_playlist_data:
-            print("❌ No playlist data available")
+        completer = getattr(widget, 'playlist_completer', None)
+        if not completer:
             return
 
-        # Group playlists by project
-        projects = {}
-        for playlist in timeline_playlist_data:
-            project_id = playlist.get("project_id", "unknown")
-            if project_id not in projects:
-                projects[project_id] = []
-            projects[project_id].append(playlist)
+        # Get playlist names
+        playlist_names = []
+        if timeline_playlist_data:
+            for playlist in timeline_playlist_data:
+                name = playlist.get("name", "Unnamed")
+                playlist_names.append(name)
 
-        # Create tree structure
-        for project_id, playlists in projects.items():
-            project_item = QTreeWidgetItem(playlist_tree)
-            project_item.setText(0, f"Project: {project_id}")
-            project_item.setData(0, Qt.UserRole, {"type": "project", "id": project_id})
+        # Update completer model
+        model = QStringListModel(playlist_names)
+        completer.setModel(model)
 
-            # Add playlists under project
-            for playlist in playlists:
-                playlist_item = QTreeWidgetItem(project_item)
-                playlist_name = playlist.get("name", "Unnamed Playlist")
-                clip_count = len(playlist.get("clips", []))
-                playlist_item.setText(0, f"{playlist_name} ({clip_count} clips)")
-                playlist_item.setData(0, Qt.UserRole, {
-                    "type": "playlist",
-                    "id": playlist["_id"],
-                    "data": playlist
-                })
-
-                # Set playlist status color
-                status = playlist.get("status", "draft")
-                if status == "active":
-                    playlist_item.setForeground(0, QColor("#4CAF50"))
-                elif status == "draft":
-                    playlist_item.setForeground(0, QColor("#FFC107"))
-
-        # Expand all items
-        playlist_tree.expandAll()
-
-        print(f"✅ Playlist tree populated with {len(timeline_playlist_data)} playlists across {len(projects)} projects")
+        print(f"✅ Updated autocomplete with {len(playlist_names)} playlists")
 
     except Exception as e:
-        print(f"❌ Error populating playlist tree: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Error updating playlist autocomplete: {e}")
 
-def on_playlist_tree_selection_changed():
-    """Handle playlist selection change."""
+
+def on_playlist_search_changed(text):
+    """Handle playlist search text change."""
+    # Just for filtering - actual selection happens in on_playlist_selected_from_completer
+    pass
+
+
+def on_playlist_selected_from_completer(playlist_name):
+    """Handle playlist selection from autocomplete dropdown."""
+    global timeline_playlist_dock, timeline_playlist_data, current_playlist_id
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        widget = timeline_playlist_dock.widget()
+
+        # Find the playlist by name
+        selected_playlist = None
+        for playlist in timeline_playlist_data or []:
+            if playlist.get("name") == playlist_name:
+                selected_playlist = playlist
+                break
+
+        if not selected_playlist:
+            print(f"❌ Playlist not found: {playlist_name}")
+            return
+
+        # Set current playlist
+        current_playlist_id = selected_playlist.get("_id")
+
+        # Update current label
+        clip_count = len(selected_playlist.get("clips", []))
+        widget.current_label.setText(f"📋 Current: {playlist_name} ({clip_count} clips)")
+
+        # Load playlist items into table
+        load_playlist_items_to_table(selected_playlist)
+
+        print(f"✅ Selected playlist: {playlist_name}")
+
+    except Exception as e:
+        print(f"❌ Error selecting playlist: {e}")
+
+
+def load_playlist_items_to_table(playlist_data):
+    """Load playlist clips into the table (same format as Navigator)."""
+    global timeline_playlist_dock
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        from PySide2.QtWidgets import QTableWidgetItem
+        from PySide2.QtCore import Qt
+
+        widget = timeline_playlist_dock.widget()
+        table = getattr(widget, 'playlist_table', None)
+        if not table:
+            return
+
+        # Clear table
+        table.setRowCount(0)
+
+        clips = playlist_data.get("clips", [])
+        if not clips:
+            print("   No clips in playlist")
+            return
+
+        # Populate table with clips
+        for clip in clips:
+            row = table.rowCount()
+            table.insertRow(row)
+
+            # Name column
+            name = clip.get("name", clip.get("shot", "Unknown"))
+            name_item = QTableWidgetItem(name)
+            name_item.setData(Qt.UserRole, clip)  # Store full clip data
+            table.setItem(row, 0, name_item)
+
+            # Dept column
+            dept = clip.get("department", "")
+            dept_item = QTableWidgetItem(dept)
+            table.setItem(row, 1, dept_item)
+
+            # Version column
+            version = clip.get("version", "v001")
+            version_item = QTableWidgetItem(version)
+            table.setItem(row, 2, version_item)
+
+            # Status column with icon
+            status = clip.get("status", "submit")
+            status_icon = "🟢" if status == "approved" else "🔴" if status == "need fix" else "🟡"
+            status_item = QTableWidgetItem(f"{status_icon} {status}")
+            table.setItem(row, 3, status_item)
+
+        print(f"📊 Loaded {len(clips)} clips into playlist table")
+
+    except Exception as e:
+        print(f"❌ Error loading playlist items: {e}")
+
+
+def on_playlist_table_context_menu(position):
+    """Handle right-click on playlist table - show context menu."""
+    global timeline_playlist_dock
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        from PySide2.QtWidgets import QMenu
+        from PySide2.QtCore import Qt
+
+        widget = timeline_playlist_dock.widget()
+        table = getattr(widget, 'playlist_table', None)
+        if not table:
+            return
+
+        selected_rows = table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+
+        menu = QMenu(table)
+
+        remove_action = menu.addAction("🗑️ Remove from Playlist")
+        menu.addSeparator()
+        load_action = menu.addAction("▶️ Load in RV")
+
+        action = menu.exec_(table.viewport().mapToGlobal(position))
+
+        if action == remove_action:
+            remove_selected_from_playlist()
+        elif action == load_action:
+            load_selected_playlist_item_in_rv()
+
+    except Exception as e:
+        print(f"❌ Error showing context menu: {e}")
+
+
+def on_playlist_item_double_click(item):
+    """Handle double-click on playlist item - load in RV."""
+    load_selected_playlist_item_in_rv()
+
+
+def load_selected_playlist_item_in_rv():
+    """Load the selected playlist item in RV."""
+    global timeline_playlist_dock, horus_fs
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        from PySide2.QtCore import Qt
+
+        widget = timeline_playlist_dock.widget()
+        table = getattr(widget, 'playlist_table', None)
+        if not table:
+            return
+
+        selected_rows = table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+
+        # Get first selected item
+        row = selected_rows[0].row()
+        name_item = table.item(row, 0)
+        if not name_item:
+            return
+
+        clip_data = name_item.data(Qt.UserRole)
+        if not clip_data:
+            return
+
+        file_path = clip_data.get("file_path", "")
+        if file_path:
+            # Convert to local path if needed
+            if horus_fs:
+                local_path = horus_fs.to_local_path(file_path)
+                print(f"▶️ Loading in RV: {local_path}")
+                # TODO: Actually load in RV using rv.commands
+            else:
+                print(f"▶️ Loading in RV: {file_path}")
+
+    except Exception as e:
+        print(f"❌ Error loading in RV: {e}")
+
+
+def remove_selected_from_playlist():
+    """Remove selected items from current playlist."""
+    global timeline_playlist_dock, current_playlist_id, horus_playlists
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    if not current_playlist_id:
+        print("❌ No playlist selected")
+        return
+
+    try:
+        from PySide2.QtCore import Qt
+
+        widget = timeline_playlist_dock.widget()
+        table = getattr(widget, 'playlist_table', None)
+        if not table:
+            return
+
+        selected_rows = table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+
+        # Get clip IDs to remove
+        clip_ids_to_remove = []
+        for index in selected_rows:
+            row = index.row()
+            name_item = table.item(row, 0)
+            if name_item:
+                clip_data = name_item.data(Qt.UserRole)
+                if clip_data:
+                    clip_id = clip_data.get("clip_id") or clip_data.get("_id")
+                    if clip_id:
+                        clip_ids_to_remove.append(clip_id)
+
+        # Remove clips from playlist via backend
+        pm = _ensure_playlist_manager()
+        if pm:
+            for clip_id in clip_ids_to_remove:
+                pm.remove_clip(current_playlist_id, clip_id)
+            print(f"✅ Removed {len(clip_ids_to_remove)} clips from playlist")
+
+        # Reload playlist data and refresh table
+        load_timeline_playlist_data()
+
+        # Refresh the table
+        for playlist in timeline_playlist_data or []:
+            if playlist.get("_id") == current_playlist_id:
+                load_playlist_items_to_table(playlist)
+                # Update current label
+                clip_count = len(playlist.get("clips", []))
+                widget.current_label.setText(f"📋 Current: {playlist.get('name', 'Unknown')} ({clip_count} clips)")
+                break
+
+    except Exception as e:
+        print(f"❌ Error removing from playlist: {e}")
+
+
+def clear_playlist_table():
+    """Clear the playlist table and reset current label."""
     global timeline_playlist_dock, current_playlist_id
 
     if not timeline_playlist_dock or not timeline_playlist_dock.widget():
         return
 
     try:
-        from PySide2.QtCore import Qt
         widget = timeline_playlist_dock.widget()
-        playlist_tree = widget.left_panel.playlist_tree
-        selected_items = playlist_tree.selectedItems()
 
-        if not selected_items:
-            current_playlist_id = None
-            widget.right_panel.current_playlist_label.setText("No playlist selected")
-            clear_timeline_display()
-            return
+        # Clear table
+        table = getattr(widget, 'playlist_table', None)
+        if table:
+            table.setRowCount(0)
 
-        item = selected_items[0]
-        item_data = item.data(0, Qt.UserRole)
+        # Reset current label
+        current_label = getattr(widget, 'current_label', None)
+        if current_label:
+            current_label.setText("📋 Current: No playlist selected")
 
-        if item_data and item_data.get("type") == "playlist":
-            playlist_id = item_data["id"]
-            playlist_data = item_data["data"]
+        # Clear search
+        playlist_search = getattr(widget, 'playlist_search', None)
+        if playlist_search:
+            playlist_search.clear()
 
-            current_playlist_id = playlist_id
-            widget.right_panel.current_playlist_label.setText(f"Playlist: {playlist_data.get('name', 'Unnamed')}")
-
-            # Load timeline for this playlist
-            load_playlist_timeline(playlist_data)
-
-            print(f"Selected playlist: {playlist_id}")
+        # Reset current playlist ID
+        current_playlist_id = None
 
     except Exception as e:
-        print(f"Error handling playlist selection: {e}")
+        print(f"❌ Error clearing playlist table: {e}")
 
-def on_playlist_double_clicked(item, column):
-    """Handle playlist double-click to start playback."""
-    try:
-        from PySide2.QtCore import Qt
-        item_data = item.data(0, Qt.UserRole)
-        if item_data and item_data.get("type") == "playlist":
-            play_current_playlist()
-    except Exception as e:
-        print(f"Error handling playlist double-click: {e}")
-
-def load_playlist_timeline(playlist_data):
-    """Load timeline visualization for the given playlist."""
-    global timeline_playlist_dock
-
-    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
-        print("❌ Timeline playlist dock not available")
-        return
-
-    try:
-        widget = timeline_playlist_dock.widget()
-        clear_timeline_display()
-
-        clips = playlist_data.get("clips", [])
-        tracks = playlist_data.get("tracks", [])
-
-        print(f"🎬 Loading timeline for playlist: {playlist_data.get('name', 'Unknown')}")
-        print(f"   Clips: {len(clips)}, Tracks: {len(tracks)}")
-
-        if not clips:
-            # Show empty timeline message
-            from PySide2.QtWidgets import QLabel
-            from PySide2.QtCore import Qt
-
-            empty_label = QLabel("No clips in this playlist\nRight-click media items to add them")
-            empty_label.setStyleSheet("""
-                QLabel {
-                    color: #888888;
-                    font-size: 14px;
-                    padding: 20px;
-                    text-align: center;
-                }
-            """)
-            empty_label.setAlignment(Qt.AlignCenter)
-            widget.right_panel.timeline_layout.addWidget(empty_label)
-            print("   Empty playlist - showing message")
-            return
-
-        # Create timeline ruler
-        ruler = create_timeline_ruler(clips)
-        widget.right_panel.timeline_layout.addWidget(ruler)
-        print("   ✅ Timeline ruler created")
-
-        # Create tracks
-        for track in tracks:
-            track_widget = create_timeline_track_widget(track, clips)
-            widget.right_panel.timeline_layout.addWidget(track_widget)
-            print(f"   ✅ Track created: {track.get('name', 'Unknown')}")
-
-        # Add stretch to push tracks to top
-        widget.right_panel.timeline_layout.addStretch()
-
-        print(f"   ✅ Timeline loaded successfully")
-
-    except Exception as e:
-        print(f"❌ Error loading playlist timeline: {e}")
-        import traceback
-        traceback.print_exc()
-
-def clear_timeline_display():
-    """Clear the timeline display."""
-    global timeline_playlist_dock
-
-    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
-        return
-
-    try:
-        widget = timeline_playlist_dock.widget()
-        timeline_layout = widget.right_panel.timeline_layout
-
-        # Remove all widgets from timeline layout
-        while timeline_layout.count():
-            child = timeline_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-    except Exception as e:
-        print(f"Error clearing timeline display: {e}")
 
 def create_timeline_ruler(clips):
     """Create timeline ruler with timecode markers."""
@@ -1657,7 +1718,7 @@ def create_new_playlist():
             if playlist_id:
                 # Reload data to sync
                 timeline_playlist_data = horus_playlists.load_playlists()
-                populate_playlist_tree()
+                update_playlist_autocomplete()
                 print(f"✅ Created new playlist: {name}")
             else:
                 print(f"❌ Failed to create playlist: {name}")
@@ -1710,7 +1771,7 @@ def duplicate_current_playlist():
             # Add to data and save
             timeline_playlist_data.append(duplicate)
             save_timeline_playlist_data()
-            populate_playlist_tree()
+            update_playlist_autocomplete()
 
             print(f"Duplicated playlist: {name}")
 
@@ -1748,12 +1809,19 @@ def rename_current_playlist():
             if horus_playlists.update_playlist(current_playlist_id, {"name": name}):
                 # Reload data to sync
                 timeline_playlist_data = horus_playlists.load_playlists()
-                populate_playlist_tree()
+                update_playlist_autocomplete()
 
                 # Update current playlist label
                 if timeline_playlist_dock and timeline_playlist_dock.widget():
                     widget = timeline_playlist_dock.widget()
-                    widget.right_panel.current_playlist_label.setText(f"Playlist: {name}")
+                    current_label = getattr(widget, 'current_label', None)
+                    if current_label:
+                        # Get clip count
+                        for p in timeline_playlist_data or []:
+                            if p.get("_id") == current_playlist_id:
+                                clip_count = len(p.get("clips", []))
+                                current_label.setText(f"📋 Current: {name} ({clip_count} clips)")
+                                break
 
                 print(f"✅ Renamed playlist to: {name}")
             else:
@@ -1796,8 +1864,8 @@ def delete_current_playlist():
             if horus_playlists.delete_playlist(current_playlist_id):
                 # Reload data to sync
                 timeline_playlist_data = horus_playlists.load_playlists()
-                populate_playlist_tree()
-                clear_timeline_display()
+                update_playlist_autocomplete()
+                clear_playlist_table()
                 print(f"✅ Deleted playlist: {playlist['name']}")
             else:
                 print(f"❌ Failed to delete playlist")
@@ -1828,7 +1896,7 @@ def refresh_timeline_playlists():
     """Refresh playlist data from database."""
     try:
         load_timeline_playlist_data()
-        populate_playlist_tree()
+        update_playlist_autocomplete()
         print("Refreshed playlist data")
     except Exception as e:
         print(f"Error refreshing playlists: {e}")
@@ -1909,7 +1977,7 @@ def add_media_to_current_playlist(media_record):
                 load_playlist_timeline(playlist)
 
             # Update tree to show new clip count
-            populate_playlist_tree()
+            update_playlist_autocomplete()
 
             from PySide2.QtWidgets import QMessageBox
             QMessageBox.information(
@@ -2110,10 +2178,9 @@ def create_search_panel():
         from PySide2.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
                                        QCheckBox, QLabel, QComboBox, QPushButton,
                                        QFrame, QTableWidget, QGridLayout,
-                                       QTableWidgetItem, QHeaderView)
+                                       QTableWidgetItem, QHeaderView, QAbstractItemView,
+                                       QSizePolicy)
         from PySide2.QtCore import Qt
-
-        from PySide2.QtWidgets import QSizePolicy
 
         widget = QWidget()
         widget.setMinimumWidth(150)  # Allow widget to shrink
@@ -2219,9 +2286,13 @@ def create_search_panel():
         media_table.setHorizontalHeaderLabels(["Name", "Dept", "Version", "Status"])
         media_table.setObjectName("media_table")
         media_table.setSelectionBehavior(QTableWidget.SelectRows)
+        media_table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # Multi-select
         media_table.setAlternatingRowColors(True)
         media_table.verticalHeader().setVisible(False)
         media_table.setSortingEnabled(True)
+
+        # Enable drag for adding to playlist
+        media_table.setDragEnabled(True)
 
         # Make columns fit content
         header = media_table.horizontalHeader()
@@ -2236,6 +2307,10 @@ def create_search_panel():
 
         # Connect double-click signal
         media_table.itemDoubleClicked.connect(on_media_table_double_click)
+
+        # Right-click context menu for "Add to Playlist"
+        media_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        media_table.customContextMenuRequested.connect(on_navigator_table_context_menu)
 
         layout.addWidget(media_table, 1)  # Stretch factor 1 to fill space
 
@@ -3090,6 +3165,156 @@ def on_media_table_double_click(item):
 
     except Exception as e:
         print(f"Error handling media table double-click: {e}")
+
+
+def on_navigator_table_context_menu(position):
+    """Handle right-click on Navigator media table - show 'Add to Playlist' menu."""
+    global search_dock, timeline_playlist_data, current_playlist_id, horus_playlists, horus_fs
+
+    try:
+        from PySide2.QtWidgets import QMenu, QMessageBox
+        from PySide2.QtCore import Qt
+
+        search_widget = search_dock.widget() if search_dock else None
+        if not search_widget:
+            return
+
+        media_table = search_widget.media_table
+        selected_rows = media_table.selectionModel().selectedRows()
+
+        if not selected_rows:
+            return
+
+        menu = QMenu(media_table)
+
+        # Add to playlist submenu
+        add_to_playlist_menu = menu.addMenu("➕ Add to Playlist")
+
+        # Load playlists if not loaded
+        if not timeline_playlist_data:
+            load_timeline_playlist_data()
+
+        if timeline_playlist_data:
+            for playlist in timeline_playlist_data:
+                playlist_name = playlist.get("name", "Unnamed")
+                playlist_id = playlist.get("_id")
+                action = add_to_playlist_menu.addAction(playlist_name)
+                action.setData(playlist_id)
+        else:
+            no_playlist_action = add_to_playlist_menu.addAction("(No playlists available)")
+            no_playlist_action.setEnabled(False)
+
+        add_to_playlist_menu.addSeparator()
+        new_playlist_action = add_to_playlist_menu.addAction("+ Create New Playlist...")
+
+        menu.addSeparator()
+        load_action = menu.addAction("▶️ Load in RV")
+
+        action = menu.exec_(media_table.viewport().mapToGlobal(position))
+
+        if action == new_playlist_action:
+            # Create new playlist first, then add
+            create_new_playlist()
+        elif action == load_action:
+            # Load selected items in RV
+            for index in selected_rows:
+                row = index.row()
+                name_item = media_table.item(row, 0)
+                if name_item:
+                    media_item = name_item.data(Qt.UserRole)
+                    if media_item:
+                        file_path = media_item.get('file_path', '')
+                        if file_path and horus_fs:
+                            file_path = horus_fs.convert_path_for_rv(file_path)
+                            load_media_in_rv(file_path)
+                        break  # Just load first selected
+        elif action and action.data():
+            # Add to selected playlist
+            playlist_id = action.data()
+            add_selected_media_to_playlist(playlist_id, selected_rows, media_table)
+
+    except Exception as e:
+        print(f"❌ Error showing navigator context menu: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def add_selected_media_to_playlist(playlist_id, selected_rows, media_table):
+    """Add selected media items from Navigator to the specified playlist."""
+    global horus_playlists, horus_fs, timeline_playlist_data, timeline_playlist_dock
+
+    try:
+        from PySide2.QtWidgets import QMessageBox
+        from PySide2.QtCore import Qt
+
+        pm = _ensure_playlist_manager()
+        if not pm:
+            print("❌ Playlist manager not available")
+            return
+
+        added_count = 0
+        for index in selected_rows:
+            row = index.row()
+            name_item = media_table.item(row, 0)
+            if not name_item:
+                continue
+
+            media_item = name_item.data(Qt.UserRole)
+            if not media_item:
+                continue
+
+            # Create clip data from media item
+            clip_data = {
+                "name": media_item.get('name', 'Unknown'),
+                "shot": media_item.get('shot', ''),
+                "episode": media_item.get('episode', ''),
+                "sequence": media_item.get('sequence', ''),
+                "department": media_item.get('department', ''),
+                "version": media_item.get('version', 'v001'),
+                "status": media_item.get('status', 'submit'),
+                "file_path": media_item.get('file_path', ''),
+            }
+
+            # Add clip to playlist
+            clip_id = pm.add_clip(playlist_id, clip_data)
+            if clip_id:
+                added_count += 1
+
+        if added_count > 0:
+            # Reload data
+            timeline_playlist_data = pm.load_playlists()
+            update_playlist_autocomplete()
+
+            # Get playlist name for message
+            playlist_name = "Unknown"
+            for p in timeline_playlist_data or []:
+                if p.get("_id") == playlist_id:
+                    playlist_name = p.get("name", "Unknown")
+                    # If this is the current playlist, refresh the table
+                    if playlist_id == current_playlist_id:
+                        load_playlist_items_to_table(p)
+                        # Update label
+                        if timeline_playlist_dock and timeline_playlist_dock.widget():
+                            widget = timeline_playlist_dock.widget()
+                            current_label = getattr(widget, 'current_label', None)
+                            if current_label:
+                                clip_count = len(p.get("clips", []))
+                                current_label.setText(f"📋 Current: {playlist_name} ({clip_count} clips)")
+                    break
+
+            print(f"✅ Added {added_count} items to playlist: {playlist_name}")
+            QMessageBox.information(
+                None, "Added to Playlist",
+                f"Added {added_count} item(s) to '{playlist_name}'"
+            )
+        else:
+            print("❌ No items were added to playlist")
+
+    except Exception as e:
+        print(f"❌ Error adding media to playlist: {e}")
+        import traceback
+        traceback.print_exc()
+
 
 def on_scale_changed():
     """Handle scale change for table size."""
@@ -4953,7 +5178,7 @@ def create_modular_media_browser():
             print("✅ Navigator and Playlist docks tabified together (RV standard)")
 
             # Populate playlist tree
-            populate_playlist_tree()
+            update_playlist_autocomplete()
             print("✅ Playlist tree populated with existing playlists")
 
         rv_main_window.addDockWidget(Qt.RightDockWidgetArea, comments_dock)
