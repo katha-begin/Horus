@@ -784,24 +784,7 @@ def create_timeline_playlist_panel():
 
         playlist_table.verticalHeader().setDefaultSectionSize(25)
 
-        playlist_table.setStyleSheet("""
-            QTableWidget {
-                background-color: #2d2d2d;
-                color: #e0e0e0;
-                border: 1px solid #555555;
-                gridline-color: #3a3a3a;
-                selection-background-color: #0078d4;
-            }
-            QTableWidget::item { padding: 5px; }
-            QTableWidget::item:selected { background-color: #0078d4; color: white; }
-            QHeaderView::section {
-                background-color: #3a3a3a;
-                color: #e0e0e0;
-                padding: 5px;
-                border: 1px solid #555555;
-                font-weight: bold;
-            }
-        """)
+        # No custom stylesheet - use Qt defaults to match Navigator 100%
 
         # Context menu for right-click
         playlist_table.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -1267,8 +1250,16 @@ def load_playlist_items_to_table(playlist_data):
             row = table.rowCount()
             table.insertRow(row)
 
-            # Name column
-            name = clip.get("name", clip.get("shot", "Unknown"))
+            # Name column: {ep}_{shot} format (same as Navigator)
+            episode = clip.get("episode", "")
+            shot = clip.get("shot", clip.get("name", "Unknown"))
+            # Format name as {ep}_{shot}, e.g. "Ep02_SH0010"
+            if episode and shot:
+                name = f"{episode}_{shot}"
+            elif shot:
+                name = shot
+            else:
+                name = clip.get("name", "Unknown")
             name_item = QTableWidgetItem(name)
             name_item.setData(Qt.UserRole, clip)  # Store full clip data
             table.setItem(row, 0, name_item)
@@ -1283,7 +1274,7 @@ def load_playlist_items_to_table(playlist_data):
             version_item = QTableWidgetItem(version)
             table.setItem(row, 2, version_item)
 
-            # Status column with icon
+            # Status column with icon (same style as Navigator)
             status = clip.get("status", "submit")
             status_icon = "🟢" if status == "approved" else "🔴" if status == "need fix" else "🟡"
             status_item = QTableWidgetItem(f"{status_icon} {status}")
