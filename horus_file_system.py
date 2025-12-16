@@ -149,6 +149,26 @@ class LocalFileSystemProvider(FileSystemProvider):
             print(f"Error writing file {path}: {e}")
             return False
 
+    def ensure_directory(self, path: str) -> bool:
+        """Ensure directory exists."""
+        try:
+            os.makedirs(path, exist_ok=True)
+            return True
+        except Exception as e:
+            print(f"Error creating directory {path}: {e}")
+            return False
+
+    def write_binary_file(self, path: str, data: bytes) -> bool:
+        """Write binary data to file."""
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'wb') as f:
+                f.write(data)
+            return True
+        except Exception as e:
+            print(f"Error writing binary file {path}: {e}")
+            return False
+
     def get_file_info(self, path: str) -> Dict:
         """Get file metadata."""
         try:
@@ -243,6 +263,24 @@ class SSHFileSystemProvider(FileSystemProvider):
         cmd = f"mkdir -p $(dirname '{path}') && echo '{escaped}' > '{path}'"
         success, _ = self._run_ssh_command(cmd)
         return success
+
+    def ensure_directory(self, path: str) -> bool:
+        """Ensure directory exists via SSH."""
+        cmd = f"mkdir -p '{path}'"
+        success, _ = self._run_ssh_command(cmd)
+        return success
+
+    def write_binary_file(self, path: str, data: bytes) -> bool:
+        """Write binary data to file via SSH using base64."""
+        import base64
+        try:
+            b64_data = base64.b64encode(data).decode('ascii')
+            cmd = f"mkdir -p $(dirname '{path}') && echo '{b64_data}' | base64 -d > '{path}'"
+            success, _ = self._run_ssh_command(cmd, timeout=60)
+            return success
+        except Exception as e:
+            print(f"Error writing binary file via SSH {path}: {e}")
+            return False
 
     def get_file_info(self, path: str) -> Dict:
         """Get file metadata via SSH."""
@@ -370,6 +408,46 @@ class HorusFileSystem:
             path = path.replace(LINUX_IMAGE_ROOT, WINDOWS_IMAGE_ROOT)
             path = path.replace("/", "\\")
         return path
+
+    # ========================================================================
+    # File System Wrapper Methods (for HorusCommentManager)
+    # ========================================================================
+
+    def file_exists(self, path: str) -> bool:
+        """Check if file exists."""
+        if not self.provider:
+            return False
+        return self.provider.file_exists(path)
+
+    def read_file(self, path: str) -> str:
+        """Read file contents."""
+        if not self.provider:
+            return ""
+        return self.provider.read_file(path)
+
+    def write_file(self, path: str, content: str) -> bool:
+        """Write content to file."""
+        if not self.provider:
+            return False
+        return self.provider.write_file(path, content)
+
+    def ensure_directory(self, path: str) -> bool:
+        """Ensure directory exists."""
+        if not self.provider:
+            return False
+        return self.provider.ensure_directory(path)
+
+    def write_binary_file(self, path: str, data: bytes) -> bool:
+        """Write binary data to file."""
+        if not self.provider:
+            return False
+        return self.provider.write_binary_file(path, data)
+
+    def list_directory(self, path: str) -> List[str]:
+        """List directory contents."""
+        if not self.provider:
+            return []
+        return self.provider.list_directory(path)
 
     # ========================================================================
     # Directory Listing Methods

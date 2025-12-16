@@ -127,6 +127,20 @@ annotations_popup_window = None
 # Horus File System - for real server access
 horus_fs = None
 
+# Horus Comment Manager
+horus_comments = None
+
+# Current media context for comments
+current_media_context = {
+    "episode": None,
+    "sequence": None,
+    "shot": None,
+    "department": None,
+    "version": None,
+    "media_file": None,
+    "file_path": None
+}
+
 # Feature flags
 ENABLE_TIMELINE_PLAYLIST = True   # Enable/disable Timeline Playlist feature
 ENABLE_LEGACY_TIMELINE = False    # Disable legacy Timeline Sequence panel
@@ -3089,7 +3103,7 @@ def update_media_table_fs(media_items):
 
 def on_media_table_double_click(item):
     """Handle double-click on media table item."""
-    global horus_fs
+    global horus_fs, horus_comments, current_media_context
 
     try:
         from PySide2.QtCore import Qt
@@ -3110,6 +3124,19 @@ def on_media_table_double_click(item):
             media_item = name_item.data(Qt.UserRole)
             if media_item:
                 file_path = media_item.get('file_path') or media_item.get('storage_url', '')
+
+                # Update current media context for comments
+                current_media_context = {
+                    "episode": media_item.get('episode'),
+                    "sequence": media_item.get('sequence'),
+                    "shot": media_item.get('shot'),
+                    "department": media_item.get('department'),
+                    "version": media_item.get('version'),
+                    "media_file": media_item.get('file_name'),
+                    "file_path": file_path
+                }
+                print(f"📝 Media context: {current_media_context['episode']}/{current_media_context['sequence']}/{current_media_context['shot']}")
+
                 if file_path:
                     # Convert path for RV if using file system backend
                     if horus_fs and horus_fs.access_mode != "none":
@@ -3117,6 +3144,9 @@ def on_media_table_double_click(item):
                     print(f"Loading media file: {file_path}")
                     # Load the media file in Open RV
                     load_media_in_rv(file_path)
+
+                    # Load comments for this shot
+                    load_comments_for_current_media()
                 else:
                     print("No file path found for media item")
             else:
@@ -3171,9 +3201,125 @@ def on_scale_changed():
         print(f"Error changing table scale: {e}")
 
 # Comments and Annotations Functions
+
+def load_comments_for_current_media():
+    """Load comments for the currently selected media."""
+    global horus_comments, current_media_context, comments_dock, horus_fs
+
+    try:
+        from PySide2.QtWidgets import QWidget
+
+        # Initialize comment manager if needed
+        if horus_comments is None:
+            from horus_comments import get_comment_manager
+            horus_comments = get_comment_manager()
+
+        # Set file system if available
+        if horus_fs and horus_comments.fs is None:
+            horus_comments.set_file_system(horus_fs)
+
+        comments_widget = comments_dock.widget() if comments_dock else None
+        if not comments_widget:
+            return
+
+        # Check if we have valid context
+        ep = current_media_context.get("episode")
+        seq = current_media_context.get("sequence")
+        shot = current_media_context.get("shot")
+
+        if not all([ep, seq, shot]):
+            print("⚠️ No valid media context for loading comments")
+            return
+
+        # Load comments from backend
+        comments_data = horus_comments.load_comments(ep, seq, shot)
+        comments_list = comments_data.get("comments", [])
+
+        print(f"📝 Loaded {len(comments_list)} comments for {ep}/{seq}/{shot}")
+
+        # Clear existing comments in UI
+        container = comments_widget.comments_container
+        layout = container.layout()
+
+        # Remove all widgets except the stretch at the end
+        while layout.count() > 1:
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # Add loaded comments to UI
+        for comment in comments_list:
+            # Convert backend format to UI format
+            ui_comment = {
+                "id": comment.get("id"),
+                "user": comment.get("user_display", comment.get("user", "Unknown")),
+                "avatar": comment.get("avatar", "??"),
+                "time": _format_timestamp(comment.get("timestamp")),
+                "frame": comment.get("frame"),
+                "text": comment.get("text", ""),
+                "likes": comment.get("likes", 0),
+                "status": comment.get("status", "open"),
+                "priority": comment.get("priority", "medium"),
+                "replies": _convert_replies_for_ui(comment.get("replies", []))
+            }
+            comment_widget = create_comment_widget(ui_comment)
+            layout.insertWidget(layout.count() - 1, comment_widget)
+
+    except Exception as e:
+        print(f"Error loading comments: {e}")
+        import traceback
+        traceback.print_exc()
+
+def _format_timestamp(timestamp_str):
+    """Format ISO timestamp to human-readable format."""
+    if not timestamp_str:
+        return "Unknown"
+    try:
+        from datetime import datetime
+        # Parse ISO format
+        ts = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+        now = datetime.now(ts.tzinfo) if ts.tzinfo else datetime.now()
+        diff = now - ts
+
+        if diff.days > 7:
+            return ts.strftime("%b %d, %Y")
+        elif diff.days > 0:
+            return f"{diff.days} days ago"
+        elif diff.seconds > 3600:
+            hours = diff.seconds // 3600
+            return f"{hours} hour{'s' if hours > 1 else ''} ago"
+        elif diff.seconds > 60:
+            mins = diff.seconds // 60
+            return f"{mins} min{'s' if mins > 1 else ''} ago"
+        else:
+            return "Just now"
+    except:
+        return timestamp_str[:10] if len(timestamp_str) > 10 else timestamp_str
+
+def _convert_replies_for_ui(replies):
+    """Convert backend reply format to UI format."""
+    ui_replies = []
+    for reply in replies:
+        ui_reply = {
+            "id": reply.get("id"),
+            "user": reply.get("user_display", reply.get("user", "Unknown")),
+            "avatar": reply.get("avatar", "??"),
+            "time": _format_timestamp(reply.get("timestamp")),
+            "text": reply.get("text", ""),
+            "likes": reply.get("likes", 0),
+            "replies": _convert_replies_for_ui(reply.get("replies", []))
+        }
+        ui_replies.append(ui_reply)
+    return ui_replies
+
+def _get_current_user():
+    """Get current user name."""
+    import os
+    return os.environ.get("USER", os.environ.get("USERNAME", "unknown.user"))
+
 def on_add_comment():
     """Handle adding a general comment."""
-    global comments_dock
+    global comments_dock, horus_comments, current_media_context, horus_fs
 
     try:
         comments_widget = comments_dock.widget() if comments_dock else None
@@ -3184,33 +3330,55 @@ def on_add_comment():
         if not comment_text:
             return
 
-        # Create new comment data
-        new_comment = {
-            "id": 999,  # Would be generated by database
-            "user": "Current User",
-            "avatar": "CU",
-            "time": "Just now",
-            "frame": None,
-            "text": comment_text,
-            "likes": 0,
-            "replies": []
-        }
+        # Check if we have valid context
+        ep = current_media_context.get("episode")
+        seq = current_media_context.get("sequence")
+        shot = current_media_context.get("shot")
+        media_file = current_media_context.get("media_file")
 
-        # Create and add comment widget
-        comment_widget = create_comment_widget(new_comment)
-        comments_widget.comments_container.layout().insertWidget(
-            comments_widget.comments_container.layout().count() - 1, comment_widget)
+        if not all([ep, seq, shot]):
+            print("⚠️ No media selected - cannot add comment")
+            return
 
-        comments_widget.comment_text.clear()
+        # Initialize comment manager if needed
+        if horus_comments is None:
+            from horus_comments import get_comment_manager
+            horus_comments = get_comment_manager()
 
-        print(f"Added general comment: {comment_text}")
+        # Set file system if available
+        if horus_fs and horus_comments.fs is None:
+            horus_comments.set_file_system(horus_fs)
+
+        # Add comment to backend
+        user = _get_current_user()
+        comment_id = horus_comments.add_comment(
+            episode=ep,
+            sequence=seq,
+            shot=shot,
+            media_file=media_file or "",
+            user=user,
+            text=comment_text,
+            frame=None,
+            department=current_media_context.get("department"),
+            version=current_media_context.get("version")
+        )
+
+        if comment_id:
+            print(f"✅ Added comment: {comment_id}")
+            # Clear text and reload comments
+            comments_widget.comment_text.clear()
+            load_comments_for_current_media()
+        else:
+            print("❌ Failed to add comment")
 
     except Exception as e:
         print(f"Error adding comment: {e}")
+        import traceback
+        traceback.print_exc()
 
 def on_add_frame_comment():
     """Handle adding a frame-specific comment."""
-    global comments_dock
+    global comments_dock, horus_comments, current_media_context
 
     try:
         comments_widget = comments_dock.widget() if comments_dock else None
@@ -3224,31 +3392,52 @@ def on_add_frame_comment():
         # Get current frame from Open RV
         current_frame = get_current_frame()
 
-        # Create new frame-specific comment data
-        new_comment = {
-            "id": 998,  # Would be generated by database
-            "user": "Current User",
-            "avatar": "CU",
-            "time": "Just now",
-            "frame": current_frame,
-            "text": comment_text,
-            "likes": 0,
-            "priority": "Medium",
-            "status": "Open",
-            "replies": []
-        }
+        # Check if we have valid context
+        ep = current_media_context.get("episode")
+        seq = current_media_context.get("sequence")
+        shot = current_media_context.get("shot")
+        media_file = current_media_context.get("media_file")
 
-        # Create and add comment widget
-        comment_widget = create_comment_widget(new_comment)
-        comments_widget.comments_container.layout().insertWidget(
-            comments_widget.comments_container.layout().count() - 1, comment_widget)
+        if not all([ep, seq, shot]):
+            print("⚠️ No media selected - cannot add frame comment")
+            return
 
-        comments_widget.comment_text.clear()
+        # Initialize comment manager if needed
+        if horus_comments is None:
+            from horus_comments import get_comment_manager
+            horus_comments = get_comment_manager()
 
-        print(f"Added frame comment at frame {current_frame}: {comment_text}")
+        # Set file system if available
+        if horus_fs and horus_comments.fs is None:
+            horus_comments.set_file_system(horus_fs)
+
+        # Add comment to backend with frame number
+        user = _get_current_user()
+        comment_id = horus_comments.add_comment(
+            episode=ep,
+            sequence=seq,
+            shot=shot,
+            media_file=media_file or "",
+            user=user,
+            text=comment_text,
+            frame=current_frame,
+            priority="medium",
+            department=current_media_context.get("department"),
+            version=current_media_context.get("version")
+        )
+
+        if comment_id:
+            print(f"✅ Added frame comment at frame {current_frame}: {comment_id}")
+            # Clear text and reload comments
+            comments_widget.comment_text.clear()
+            load_comments_for_current_media()
+        else:
+            print("❌ Failed to add frame comment")
 
     except Exception as e:
         print(f"Error adding frame comment: {e}")
+        import traceback
+        traceback.print_exc()
 
 def create_annotations_popup():
     """Create the annotations popup window."""
