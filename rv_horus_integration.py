@@ -2982,9 +2982,12 @@ def populate_shot_filter_fs(episode: str, sequence: str):
         print(f"Error populating shot filter: {e}")
 
 
+_last_episode_filter = None
+_last_sequence_filter = None
+
 def apply_filters_fs():
     """Apply filters using file system backend."""
-    global search_dock, horus_fs
+    global search_dock, horus_fs, _last_episode_filter, _last_sequence_filter
 
     if not horus_fs or horus_fs.access_mode == "none":
         return
@@ -2996,17 +2999,25 @@ def apply_filters_fs():
 
         # Get filter values
         episode = search_widget.episode_filter.currentText()
+        sequence = search_widget.sequence_filter.currentText()
         department = search_widget.department_filter.currentText()
+        shot = search_widget.shot_filter.currentText()
         status = search_widget.status_filter.currentText()
         search_text = search_widget.search_input.text().lower()
         latest_only = search_widget.version_toggle.isChecked()
 
-        # Update dependent filters FIRST, then read current values
-        populate_sequence_filter(episode)
-        sequence = search_widget.sequence_filter.currentText()
+        # Only repopulate sequence filter when episode changes
+        if episode != _last_episode_filter:
+            _last_episode_filter = episode
+            populate_sequence_filter(episode)
+            sequence = search_widget.sequence_filter.currentText()  # Re-read after populate
+            _last_sequence_filter = None  # Reset to trigger shot repopulate
 
-        populate_shot_filter_fs(episode, sequence)
-        shot = search_widget.shot_filter.currentText()
+        # Only repopulate shot filter when sequence changes
+        if sequence != _last_sequence_filter:
+            _last_sequence_filter = sequence
+            populate_shot_filter_fs(episode, sequence)
+            shot = search_widget.shot_filter.currentText()  # Re-read after populate
 
         # Get media files from file system
         if episode == "All":
