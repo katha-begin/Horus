@@ -38,7 +38,8 @@ def find_openrv_executable():
         r"C:\OpenRv\_build\stage\app\bin\rv.exe",
         r"C:\OpenRV\bin\rv.exe",
         r"C:\Program Files\OpenRV\bin\rv.exe",
-        r"C:\Program Files (x86)\OpenRV\bin\rv.exe"
+        r"C:\Program Files (x86)\OpenRV\bin\rv.exe",
+        r"T:\software\OpenRV\_build\stage\app\bin\rv.exe"
     ]
 
     for path in possible_paths:
