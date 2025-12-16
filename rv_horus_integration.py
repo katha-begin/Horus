@@ -1812,22 +1812,13 @@ def load_playlist_items_to_table(playlist_data):
 
 
 def on_playlist_status_changed(new_status):
-    """Handle status change in playlist table."""
-    global horus_playlists, current_playlist_id, timeline_playlist_data
+    """Handle status change in playlist table - save to JSON (SAME AS NAVIGATOR)."""
+    global horus_playlists, current_playlist_id, timeline_playlist_data, horus_fs
 
     try:
         # Get the combo box that triggered this
-        from PySide2.QtWidgets import QComboBox
-        sender = None
-        for obj in QComboBox.findChildren(QComboBox):
-            if obj.currentText() == new_status:
-                sender = obj
-                break
-
-        if not sender:
-            # Fallback: find sender from QObject
-            from PySide2.QtCore import QObject
-            sender = QObject.sender()
+        from PySide2.QtCore import QObject
+        sender = QObject.sender()
 
         if not sender:
             return
@@ -1836,20 +1827,34 @@ def on_playlist_status_changed(new_status):
         if not clip_data:
             return
 
-        # Update clip status in backend
+        # Update status in the clip data
+        clip_data['status'] = new_status
+
+        # Save to JSON file via file system backend (SAME AS NAVIGATOR)
+        if horus_fs:
+            episode = clip_data.get('episode', '')
+            sequence = clip_data.get('sequence', '')
+            shot = clip_data.get('shot', '')
+            department = clip_data.get('department', '')
+            version = clip_data.get('version', '')
+
+            if episode and sequence and shot and department and version:
+                # Use set_shot_status to save to comments JSON (SAME AS NAVIGATOR)
+                success = horus_fs.set_shot_status(
+                    episode, sequence, shot, department, version, new_status
+                )
+                if success:
+                    print(f"✅ Updated Playlist status to: {new_status}")
+                else:
+                    print(f"❌ Failed to save Playlist status")
+
+        # Also update in playlist backend
         pm = _ensure_playlist_manager()
-        if not pm or not current_playlist_id:
-            return
-
-        clip_id = clip_data.get("_id")
-        if clip_id:
-            # Update status in backend
-            pm.update_clip(current_playlist_id, clip_id, {"status": new_status})
-
-            # Reload playlist data
-            timeline_playlist_data = pm.load_playlists()
-
-            print(f"✅ Updated clip status to: {new_status}")
+        if pm and current_playlist_id:
+            clip_id = clip_data.get("_id")
+            if clip_id:
+                pm.update_clip(current_playlist_id, clip_id, {"status": new_status})
+                timeline_playlist_data = pm.load_playlists()
 
     except Exception as e:
         print(f"❌ Error updating playlist status: {e}")
@@ -2031,8 +2036,8 @@ def on_playlist_item_double_click(item):
 
 
 def load_selected_playlist_item_in_rv():
-    """Load the selected playlist item in RV."""
-    global timeline_playlist_dock, horus_fs
+    """Load the selected playlist item in RV - SAME AS NAVIGATOR."""
+    global timeline_playlist_dock, horus_fs, horus_comments, current_media_context
 
     if not timeline_playlist_dock or not timeline_playlist_dock.widget():
         return
@@ -2060,17 +2065,36 @@ def load_selected_playlist_item_in_rv():
             return
 
         file_path = clip_data.get("file_path", "")
+
+        # Update current media context for comments (SAME AS NAVIGATOR)
+        current_media_context = {
+            "episode": clip_data.get('episode'),
+            "sequence": clip_data.get('sequence'),
+            "shot": clip_data.get('shot'),
+            "department": clip_data.get('department'),
+            "version": clip_data.get('version'),
+            "media_file": clip_data.get('file_name'),
+            "file_path": file_path
+        }
+        print(f"📝 Media context: {current_media_context['episode']}/{current_media_context['sequence']}/{current_media_context['shot']}")
+
         if file_path:
-            # Convert to local path if needed
-            if horus_fs:
-                local_path = horus_fs.to_local_path(file_path)
-                print(f"▶️ Loading in RV: {local_path}")
-                # TODO: Actually load in RV using rv.commands
-            else:
-                print(f"▶️ Loading in RV: {file_path}")
+            # Convert path for RV if using file system backend (SAME AS NAVIGATOR)
+            if horus_fs and horus_fs.access_mode != "none":
+                file_path = horus_fs.convert_path_for_rv(file_path)
+            print(f"Loading media file: {file_path}")
+            # Load the media file in Open RV (SAME AS NAVIGATOR)
+            load_media_in_rv(file_path)
+
+            # Load comments for this shot (SAME AS NAVIGATOR)
+            load_comments_for_current_media()
+        else:
+            print("No file path found for media item")
 
     except Exception as e:
         print(f"❌ Error loading in RV: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def remove_selected_from_playlist():
@@ -3895,16 +3919,80 @@ def update_media_table_fs(media_items):
             version_item = QTableWidgetItem(version)
             media_table.setItem(row, 2, version_item)
 
-            # Status column with color
+            # Status column - DROPDOWN (same as playlist table)
             status = item.get('status', 'submit')
-            status_icon = "🟢" if status == "approved" else "🔴" if status == "need fix" else "🟡"
-            status_item = QTableWidgetItem(f"{status_icon} {status}")
-            media_table.setItem(row, 3, status_item)
+            status_combo = QComboBox()
+            status_combo.addItems(["approved", "submit", "need fix", "on hold"])
+            status_combo.setCurrentText(status)
+            status_combo.setStyleSheet("""
+                QComboBox {
+                    background-color: #3a3a3a;
+                    color: #e0e0e0;
+                    border: 1px solid #555555;
+                    padding: 2px 5px;
+                }
+                QComboBox::drop-down {
+                    border: none;
+                }
+                QComboBox QAbstractItemView {
+                    background-color: #3a3a3a;
+                    color: #e0e0e0;
+                    selection-background-color: #0078d4;
+                }
+            """)
+            # Store media item data on combo box for later retrieval
+            status_combo.setProperty("media_item", item)
+            status_combo.setProperty("row", row)
+            status_combo.currentTextChanged.connect(on_navigator_status_changed)
+            media_table.setCellWidget(row, 3, status_combo)
 
         print(f"📊 Updated table with {len(media_items)} items")
 
     except Exception as e:
         print(f"Error updating media table (fs): {e}")
+
+
+def on_navigator_status_changed(new_status):
+    """Handle status change in Navigator table - save to JSON (SAME AS PLAYLIST)."""
+    global horus_fs
+
+    try:
+        # Get the combo box that triggered this
+        from PySide2.QtCore import QObject
+        sender = QObject.sender()
+
+        if not sender:
+            return
+
+        media_item = sender.property("media_item")
+        if not media_item:
+            return
+
+        # Update status in the media item
+        media_item['status'] = new_status
+
+        # Save to JSON file via file system backend
+        if horus_fs:
+            episode = media_item.get('episode', '')
+            sequence = media_item.get('sequence', '')
+            shot = media_item.get('shot', '')
+            department = media_item.get('department', '')
+            version = media_item.get('version', '')
+
+            if episode and sequence and shot and department and version:
+                # Use set_shot_status to save to comments JSON
+                success = horus_fs.set_shot_status(
+                    episode, sequence, shot, department, version, new_status
+                )
+                if success:
+                    print(f"✅ Updated Navigator status to: {new_status}")
+                else:
+                    print(f"❌ Failed to save Navigator status")
+
+    except Exception as e:
+        print(f"❌ Error updating Navigator status: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def on_media_table_double_click(item):
