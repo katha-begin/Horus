@@ -208,11 +208,18 @@ def create_comments_panel():
         comments_container_layout.setContentsMargins(5, 5, 5, 5)
         comments_container_layout.setSpacing(10)
 
-        # Add sample VFX comments with threading
-        sample_comments = create_sample_vfx_comments()
-        for comment_data in sample_comments:
-            comment_widget = create_comment_widget(comment_data)
-            comments_container_layout.addWidget(comment_widget)
+        # Add placeholder message (shown when no media selected)
+        placeholder_label = QLabel("Select a media file to view comments")
+        placeholder_label.setObjectName("comments_placeholder")
+        placeholder_label.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                font-style: italic;
+                padding: 20px;
+            }
+        """)
+        placeholder_label.setAlignment(Qt.AlignCenter)
+        comments_container_layout.addWidget(placeholder_label)
 
         comments_container_layout.addStretch()
         comments_scroll.setWidget(comments_container)
@@ -3247,23 +3254,38 @@ def load_comments_for_current_media():
             if item.widget():
                 item.widget().deleteLater()
 
-        # Add loaded comments to UI
-        for comment in comments_list:
-            # Convert backend format to UI format
-            ui_comment = {
-                "id": comment.get("id"),
-                "user": comment.get("user_display", comment.get("user", "Unknown")),
-                "avatar": comment.get("avatar", "??"),
-                "time": _format_timestamp(comment.get("timestamp")),
-                "frame": comment.get("frame"),
-                "text": comment.get("text", ""),
-                "likes": comment.get("likes", 0),
-                "status": comment.get("status", "open"),
-                "priority": comment.get("priority", "medium"),
-                "replies": _convert_replies_for_ui(comment.get("replies", []))
-            }
-            comment_widget = create_comment_widget(ui_comment)
-            layout.insertWidget(layout.count() - 1, comment_widget)
+        # Show "no comments" placeholder if empty, otherwise show comments
+        if len(comments_list) == 0:
+            from PySide2.QtWidgets import QLabel
+            from PySide2.QtCore import Qt
+            no_comments_label = QLabel("No comments yet. Be the first to comment!")
+            no_comments_label.setStyleSheet("""
+                QLabel {
+                    color: #888888;
+                    font-style: italic;
+                    padding: 20px;
+                }
+            """)
+            no_comments_label.setAlignment(Qt.AlignCenter)
+            layout.insertWidget(layout.count() - 1, no_comments_label)
+        else:
+            # Add loaded comments to UI
+            for comment in comments_list:
+                # Convert backend format to UI format
+                ui_comment = {
+                    "id": comment.get("id"),
+                    "user": comment.get("user_display", comment.get("user", "Unknown")),
+                    "avatar": comment.get("avatar", "??"),
+                    "time": _format_timestamp(comment.get("timestamp")),
+                    "frame": comment.get("frame"),
+                    "text": comment.get("text", ""),
+                    "likes": comment.get("likes", 0),
+                    "status": comment.get("status", "open"),
+                    "priority": comment.get("priority", "medium"),
+                    "replies": _convert_replies_for_ui(comment.get("replies", []))
+                }
+                comment_widget = create_comment_widget(ui_comment)
+                layout.insertWidget(layout.count() - 1, comment_widget)
 
     except Exception as e:
         print(f"Error loading comments: {e}")
