@@ -1795,8 +1795,8 @@ def on_playlist_status_changed(new_status):
 
     try:
         # Get the combo box that triggered this
-        from PySide2.QtCore import QObject
-        sender = QObject.sender()
+        from PySide2.QtWidgets import QApplication
+        sender = QApplication.instance().sender()
 
         if not sender:
             return
@@ -3943,8 +3943,8 @@ def on_navigator_status_changed(new_status):
 
     try:
         # Get the combo box that triggered this
-        from PySide2.QtCore import QObject
-        sender = QObject.sender()
+        from PySide2.QtWidgets import QApplication
+        sender = QApplication.instance().sender()
 
         if not sender:
             return
