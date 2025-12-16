@@ -204,14 +204,14 @@ IMAGE_ROOT = "/mnt/igloo_swa_w/"    # Image sequences (.exr)
 ---
 
 ### **4. Playlists Storage (New - JSON)**
-**Location:** `/mnt/igloo_swa_v/SWA/.horus/playlists/{playlist_name}.json`
+**Location:** `/mnt/igloo_swa_v/SWA/all/scene/.horus/playlists.json`
 
-**Example:** `/mnt/igloo_swa_v/SWA/.horus/playlists/daily_review_2025-12-15.json`
-
-**Why Under Project Root:**
+**Why Under `all/scene/`:**
+- ✅ Has write permissions (777) for all users
 - ✅ Shared across all users on network
-- ✅ Centralized storage
+- ✅ Centralized storage - single file for all playlists
 - ✅ No sync issues between machines
+- ✅ Works via SSH from Windows development machines
 
 **Structure:**
 ```json

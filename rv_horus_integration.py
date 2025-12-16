@@ -1157,19 +1157,28 @@ def create_timeline_tracks_panel():
 
     return panel
 
+def _ensure_playlist_manager():
+    """Ensure playlist manager is initialized with file system."""
+    global horus_playlists, horus_fs
+
+    if horus_playlists is None:
+        from horus_playlists import get_playlist_manager
+        horus_playlists = get_playlist_manager()
+
+    # Always ensure file system is set
+    if horus_fs and horus_playlists.fs is None:
+        horus_playlists.set_file_system(horus_fs)
+
+    return horus_playlists
+
+
 def load_timeline_playlist_data():
     """Load playlist data using HorusPlaylistManager backend."""
-    global timeline_playlist_data, horus_fs, horus_playlists
+    global timeline_playlist_data, horus_playlists
 
     try:
-        # Initialize playlist manager if needed
-        if horus_playlists is None:
-            from horus_playlists import get_playlist_manager
-            horus_playlists = get_playlist_manager()
-
-        # Set file system if available
-        if horus_fs and horus_playlists.fs is None:
-            horus_playlists.set_file_system(horus_fs)
+        # Initialize playlist manager with file system
+        _ensure_playlist_manager()
 
         # Load playlists from backend
         timeline_playlist_data = horus_playlists.load_playlists()
@@ -1194,9 +1203,7 @@ def save_timeline_playlist_data():
     global horus_playlists
 
     try:
-        if horus_playlists is None:
-            from horus_playlists import get_playlist_manager
-            horus_playlists = get_playlist_manager()
+        _ensure_playlist_manager()
 
         # The cache is already updated in horus_playlists, just save
         if horus_playlists.save_playlists():
@@ -1632,10 +1639,8 @@ def create_new_playlist():
 
         name, ok = QInputDialog.getText(None, "New Playlist", "Enter playlist name:")
         if ok and name:
-            # Initialize playlist manager if needed
-            if horus_playlists is None:
-                from horus_playlists import get_playlist_manager
-                horus_playlists = get_playlist_manager()
+            # Initialize playlist manager with file system
+            _ensure_playlist_manager()
 
             # Get current user
             import os
@@ -1722,10 +1727,8 @@ def rename_current_playlist():
             QMessageBox.warning(None, "Warning", "Please select a playlist to rename.")
             return
 
-        # Initialize playlist manager if needed
-        if horus_playlists is None:
-            from horus_playlists import get_playlist_manager
-            horus_playlists = get_playlist_manager()
+        # Initialize playlist manager with file system
+        _ensure_playlist_manager()
 
         # Get current playlist
         playlist = horus_playlists.get_playlist(current_playlist_id)
@@ -1771,10 +1774,8 @@ def delete_current_playlist():
             QMessageBox.warning(None, "Warning", "Please select a playlist to delete.")
             return
 
-        # Initialize playlist manager if needed
-        if horus_playlists is None:
-            from horus_playlists import get_playlist_manager
-            horus_playlists = get_playlist_manager()
+        # Initialize playlist manager with file system
+        _ensure_playlist_manager()
 
         # Get playlist name for confirmation
         playlist = horus_playlists.get_playlist(current_playlist_id)
@@ -1869,10 +1870,8 @@ def add_media_to_current_playlist(media_record):
             QMessageBox.warning(None, "Warning", "Please select a playlist first.")
             return
 
-        # Initialize playlist manager if needed
-        if horus_playlists is None:
-            from horus_playlists import get_playlist_manager
-            horus_playlists = get_playlist_manager()
+        # Initialize playlist manager with file system
+        _ensure_playlist_manager()
 
         # Extract department from filename
         filename = media_record.get("file_name", "")
