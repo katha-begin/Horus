@@ -39,9 +39,15 @@ def get_ui_state_path():
     return config_dir / 'ui_state.json'
 
 
+_ui_state_loading = False  # Flag to prevent saving during restore
+
 def save_ui_state():
     """Save dock visibility to local config (only visibility, not positions to avoid corruption)."""
-    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
+    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock, _ui_state_loading
+
+    # Don't save while restoring
+    if _ui_state_loading:
+        return
 
     try:
         # Save dock visibility only
@@ -61,7 +67,7 @@ def save_ui_state():
         with open(state_path, 'w', encoding='utf-8') as f:
             json.dump(ui_state, f, indent=2)
 
-        print(f"✅ Dock visibility saved")
+        # Only print on actual user-triggered save (not too verbose)
 
     except Exception as e:
         print(f"⚠️ Could not save UI state: {e}")
@@ -69,15 +75,15 @@ def save_ui_state():
 
 def restore_ui_state():
     """Restore dock visibility only from local config (skip window state to avoid corruption)."""
-    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
+    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock, _ui_state_loading
 
     try:
-        from PySide2.QtWidgets import QApplication, QMainWindow
-        import base64
+        _ui_state_loading = True  # Prevent save during restore
 
         state_path = get_ui_state_path()
         if not state_path.exists():
             print("ℹ️ No saved UI state found, using defaults")
+            _ui_state_loading = False
             return False
 
         with open(state_path, 'r', encoding='utf-8') as f:
@@ -96,15 +102,26 @@ def restore_ui_state():
             media_grid_dock.setVisible(dock_visibility.get('media_grid', False))
 
         print(f"✅ Dock visibility restored from {state_path}")
+        _ui_state_loading = False
         return True
 
     except Exception as e:
         print(f"⚠️ Could not restore UI state: {e}")
+        _ui_state_loading = False
         return False
 
 
 def setup_horus_menu():
-    """Add Horus menu to RV's menu bar."""
+    """Add Horus menu to RV's menu bar (delayed to ensure RV menus are ready)."""
+    try:
+        from PySide2.QtCore import QTimer
+        # Delay menu creation to ensure RV's menu bar is populated
+        QTimer.singleShot(1000, _create_horus_menu_delayed)
+    except Exception as e:
+        print(f"⚠️ Could not schedule Horus menu: {e}")
+
+def _create_horus_menu_delayed():
+    """Actually create the Horus menu after delay."""
     global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
 
     try:
@@ -984,6 +1001,25 @@ def create_timeline_playlist_panel():
         playlist_completer.setCaseSensitivity(Qt.CaseInsensitive)
         playlist_completer.setFilterMode(Qt.MatchContains)
         playlist_search.setCompleter(playlist_completer)
+
+        # Install event filter to show dropdown on mouse click
+        from PySide2.QtCore import QObject, QEvent
+
+        class PlaylistSearchFilter(QObject):
+            def eventFilter(self, obj, event):
+                if event.type() == QEvent.MouseButtonPress:
+                    # Show all playlists when clicking on search box
+                    completer = obj.completer()
+                    if completer:
+                        completer.setCompletionPrefix("")
+                        completer.complete()
+                return False
+
+        search_filter = PlaylistSearchFilter(playlist_search)
+        playlist_search.installEventFilter(search_filter)
+        # Keep reference to prevent garbage collection
+        playlist_search._search_filter = search_filter
+
         layout.addWidget(playlist_search)
 
         # ===== Control Buttons =====
@@ -1485,11 +1521,31 @@ def on_playlist_search_changed(text):
         completer = getattr(widget, 'playlist_completer', None)
         playlist_search = getattr(widget, 'playlist_search', None)
 
-        if completer and playlist_search and text:
-            # Make sure completer popup shows
+        if completer and playlist_search:
+            # Always show completer popup (even when empty - show all playlists)
             completer.complete()
     except Exception as e:
         print(f"❌ Error in search changed: {e}")
+
+
+def on_playlist_search_clicked():
+    """Handle click on playlist search box - show all playlists."""
+    global timeline_playlist_dock
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        widget = timeline_playlist_dock.widget()
+        completer = getattr(widget, 'playlist_completer', None)
+        playlist_search = getattr(widget, 'playlist_search', None)
+
+        if completer and playlist_search:
+            # Clear filter and show all
+            completer.setCompletionPrefix("")
+            completer.complete()
+    except Exception as e:
+        print(f"❌ Error in search clicked: {e}")
 
 
 def on_playlist_search_enter_pressed():
