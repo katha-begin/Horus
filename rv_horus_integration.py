@@ -162,6 +162,7 @@ def setup_horus_menu():
 
         app = QApplication.instance()
         if not app:
+            print("⚠️ Horus menu: No QApplication found")
             return
 
         rv_main_window = None
@@ -171,23 +172,31 @@ def setup_horus_menu():
                 break
 
         if not rv_main_window:
+            print("⚠️ Horus menu: No QMainWindow found")
             return
 
         menubar = rv_main_window.menuBar()
         if not menubar:
+            print("⚠️ Horus menu: No menuBar found")
             return
 
-        # Find the Help menu to insert before it
-        help_menu = None
+        # Debug: Print all menu items
+        print("📋 RV Menu Bar items:")
+        for action in menubar.actions():
+            menu_text = action.text()
+            print(f"   - '{menu_text}'")
+
+        # Find the Help menu to insert before it (try multiple patterns)
         help_action = None
         for action in menubar.actions():
-            if action.text().replace('&', '') == 'Help':
+            text = action.text().replace('&', '').strip()
+            if text.lower() == 'help':
                 help_action = action
-                help_menu = action.menu()
+                print(f"   Found Help menu: '{action.text()}'")
                 break
 
         # Create Horus menu
-        horus_menu = QMenu("&Horus", rv_main_window)
+        horus_menu = QMenu("Horus", rv_main_window)
 
         # --- Panels Section ---
         horus_menu.addSection("Panels")
