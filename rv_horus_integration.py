@@ -1773,6 +1773,103 @@ def create_new_playlist():
         import traceback
         traceback.print_exc()
 
+
+def create_new_playlist_with_items(selected_rows, media_table):
+    """Create a new playlist and add selected items to it."""
+    global horus_playlists, timeline_playlist_data, current_playlist_id, timeline_playlist_dock
+
+    try:
+        from PySide2.QtWidgets import QInputDialog, QMessageBox
+        from PySide2.QtCore import Qt
+
+        name, ok = QInputDialog.getText(None, "New Playlist", "Enter playlist name:")
+        if not ok or not name:
+            return
+
+        # Initialize playlist manager with file system
+        pm = _ensure_playlist_manager()
+        if not pm:
+            print("❌ Playlist manager not available")
+            return
+
+        # Get current user
+        import os
+        user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
+
+        # Create playlist via backend
+        playlist_id = pm.create_playlist(
+            name=name,
+            created_by=user,
+            description=f"User created playlist: {name}",
+            playlist_type="user_created"
+        )
+
+        if not playlist_id:
+            print(f"❌ Failed to create playlist: {name}")
+            return
+
+        # Add selected items to the new playlist
+        added_count = 0
+        for index in selected_rows:
+            row = index.row()
+            name_item = media_table.item(row, 0)
+            if not name_item:
+                continue
+
+            media_item = name_item.data(Qt.UserRole)
+            if not media_item:
+                continue
+
+            # Create clip data from media item
+            clip_data = {
+                "name": media_item.get('name', 'Unknown'),
+                "shot": media_item.get('shot', ''),
+                "episode": media_item.get('episode', ''),
+                "sequence": media_item.get('sequence', ''),
+                "department": media_item.get('department', ''),
+                "version": media_item.get('version', 'v001'),
+                "status": media_item.get('status', 'submit'),
+                "file_path": media_item.get('file_path', ''),
+            }
+
+            # Add clip to playlist
+            clip_id = pm.add_clip(playlist_id, clip_data)
+            if clip_id:
+                added_count += 1
+
+        # Reload data to sync
+        timeline_playlist_data = pm.load_playlists()
+        update_playlist_autocomplete()
+
+        # Select the new playlist
+        current_playlist_id = playlist_id
+        for p in timeline_playlist_data or []:
+            if p.get("_id") == playlist_id:
+                load_playlist_items_to_table(p)
+                # Update label
+                if timeline_playlist_dock and timeline_playlist_dock.widget():
+                    widget = timeline_playlist_dock.widget()
+                    current_label = getattr(widget, 'current_label', None)
+                    playlist_search = getattr(widget, 'playlist_search', None)
+                    if current_label:
+                        clip_count = len(p.get("clips", []))
+                        current_label.setText(f"📋 Current: {name} ({clip_count} clips)")
+                    if playlist_search:
+                        playlist_search.setText(name)
+                break
+
+        print(f"✅ Created playlist '{name}' with {added_count} items")
+        QMessageBox.information(
+            None, "Playlist Created",
+            f"Created playlist '{name}' with {added_count} item(s)"
+        )
+
+    except Exception as e:
+        print(f"Error creating new playlist with items: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def duplicate_current_playlist():
     """Duplicate the selected playlist."""
     try:
@@ -3258,10 +3355,11 @@ def on_navigator_table_context_menu(position):
         action = menu.exec_(media_table.viewport().mapToGlobal(position))
 
         if action == new_playlist_action:
-            # Create new playlist first, then add
-            create_new_playlist()
+            # Create new playlist and add selected items to it
+            create_new_playlist_with_items(selected_rows, media_table)
         elif action == load_action:
-            # Load selected items in RV
+            # Load ALL selected items in RV
+            file_paths = []
             for index in selected_rows:
                 row = index.row()
                 name_item = media_table.item(row, 0)
@@ -3271,8 +3369,12 @@ def on_navigator_table_context_menu(position):
                         file_path = media_item.get('file_path', '')
                         if file_path and horus_fs:
                             file_path = horus_fs.convert_path_for_rv(file_path)
-                            load_media_in_rv(file_path)
-                        break  # Just load first selected
+                            file_paths.append(file_path)
+
+            # Load all files in RV
+            if file_paths:
+                load_multiple_media_in_rv(file_paths)
+                print(f"✅ Loaded {len(file_paths)} media files in RV")
         elif action and action.data():
             # Add to selected playlist
             playlist_id = action.data()
@@ -4942,6 +5044,25 @@ def load_media_in_rv(file_path):
         print(f"Loaded in RV: {file_path}")
     except Exception as e:
         print(f"Error loading in RV: {e}")
+
+
+def load_multiple_media_in_rv(file_paths):
+    """Load multiple media files in Open RV as a sequence."""
+    try:
+        import rv.commands as rvc
+
+        if not file_paths:
+            return
+
+        # Add all sources to RV
+        for file_path in file_paths:
+            rvc.addSource(file_path)
+            print(f"Added to RV: {file_path}")
+
+        print(f"✅ Loaded {len(file_paths)} media files in RV")
+    except Exception as e:
+        print(f"Error loading multiple media in RV: {e}")
+
 
 def refresh_horus_data():
     """Reset all filters to default values."""
