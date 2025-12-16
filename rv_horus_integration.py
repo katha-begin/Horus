@@ -1817,6 +1817,9 @@ def on_playlist_status_changed(new_status):
         clip_data['status'] = new_status
 
         # Save to JSON file via file system backend (SAME AS NAVIGATOR)
+        print(f"   horus_fs: {horus_fs}")
+        print(f"   horus_fs type: {type(horus_fs)}")
+
         if horus_fs:
             episode = clip_data.get('episode', '')
             sequence = clip_data.get('sequence', '')
@@ -3978,6 +3981,9 @@ def on_navigator_status_changed(new_status):
         media_item['status'] = new_status
 
         # Save to JSON file via file system backend
+        print(f"   horus_fs: {horus_fs}")
+        print(f"   horus_fs type: {type(horus_fs)}")
+
         if horus_fs:
             episode = media_item.get('episode', '')
             sequence = media_item.get('sequence', '')

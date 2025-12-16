@@ -139,14 +139,26 @@ class LocalFileSystemProvider(FileSystemProvider):
 
     def write_file(self, path: str, content: str) -> bool:
         """Write content to file."""
+        print(f"🔧 LocalProvider.write_file called:")
+        print(f"   path: {path}")
+        print(f"   content length: {len(content)} bytes")
+
         try:
             # Create directory if needed
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            dir_path = os.path.dirname(path)
+            print(f"   Creating directory: {dir_path}")
+            os.makedirs(dir_path, exist_ok=True)
+
+            print(f"   Writing file...")
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(content)
+
+            print(f"   ✅ File written successfully")
             return True
         except Exception as e:
-            print(f"Error writing file {path}: {e}")
+            print(f"   ❌ Error writing file {path}: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def ensure_directory(self, path: str) -> bool:
@@ -259,9 +271,19 @@ class SSHFileSystemProvider(FileSystemProvider):
 
     def write_file(self, path: str, content: str) -> bool:
         """Write content to file via SSH."""
+        print(f"🔧 SSHProvider.write_file called:")
+        print(f"   path: {path}")
+        print(f"   content length: {len(content)} bytes")
+
         escaped = content.replace("'", "'\\''")
         cmd = f"mkdir -p $(dirname '{path}') && echo '{escaped}' > '{path}'"
-        success, _ = self._run_ssh_command(cmd)
+        print(f"   Running SSH command...")
+
+        success, output = self._run_ssh_command(cmd)
+        print(f"   SSH command result: success={success}")
+        if output:
+            print(f"   SSH output: {output}")
+
         return success
 
     def ensure_directory(self, path: str) -> bool:
@@ -696,12 +718,22 @@ class HorusFileSystem:
 
     def save_comments(self, episode: str, data: Dict) -> bool:
         """Save comments for an episode."""
+        print(f"💾 save_comments called for episode: {episode}")
+
         if not self.provider:
+            print(f"   ❌ No provider available")
             return False
 
         path = self.get_comments_file_path(episode)
+        print(f"   File path: {path}")
+
         content = json.dumps(data, indent=2)
-        return self.provider.write_file(path, content)
+        print(f"   Content size: {len(content)} bytes")
+        print(f"   Number of shots: {len(data.get('shots', []))}")
+
+        result = self.provider.write_file(path, content)
+        print(f"   Write result: {result}")
+        return result
 
     def get_shot_status(self, episode: str, sequence: str, shot: str,
                         department: str, version: str) -> str:
@@ -718,7 +750,12 @@ class HorusFileSystem:
     def set_shot_status(self, episode: str, sequence: str, shot: str,
                         department: str, version: str, status: str) -> bool:
         """Set status for a specific shot version."""
+        print(f"📝 set_shot_status called:")
+        print(f"   episode={episode}, sequence={sequence}, shot={shot}")
+        print(f"   department={department}, version={version}, status={status}")
+
         comments = self.load_comments(episode)
+        print(f"   Loaded comments: {len(comments.get('shots', []))} existing shots")
 
         # Find or create shot entry
         found = False
@@ -727,11 +764,13 @@ class HorusFileSystem:
                 shot_data.get("shot") == shot and
                 shot_data.get("department") == department and
                 shot_data.get("version") == version):
+                print(f"   ✅ Found existing shot entry, updating status")
                 shot_data["shot_status"] = status
                 found = True
                 break
 
         if not found:
+            print(f"   ➕ Creating new shot entry")
             comments.setdefault("shots", []).append({
                 "sequence": sequence,
                 "shot": shot,
@@ -741,7 +780,10 @@ class HorusFileSystem:
                 "comments": []
             })
 
-        return self.save_comments(episode, comments)
+        print(f"   Saving comments to JSON...")
+        result = self.save_comments(episode, comments)
+        print(f"   Save result: {result}")
+        return result
 
     # ========================================================================
     # Playlist Methods
