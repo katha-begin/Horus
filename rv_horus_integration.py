@@ -1119,14 +1119,26 @@ def create_timeline_playlist_panel():
         playlist_search.returnPressed.connect(on_playlist_search_enter_pressed)
         playlist_completer.activated.connect(on_playlist_selected_from_completer)
 
-        # Load initial data
-        load_timeline_playlist_data()
-
-        # Store references
+        # Store references BEFORE loading data (so update_playlist_autocomplete can find them)
         widget.playlist_search = playlist_search
         widget.playlist_completer = playlist_completer
         widget.current_label = current_label
         widget.playlist_table = playlist_table
+
+        # Load initial data
+        load_timeline_playlist_data()
+
+        # Populate autocomplete with loaded playlists directly here
+        # (since timeline_playlist_dock isn't set yet, we do it manually)
+        from PySide2.QtCore import QStringListModel
+        playlist_names = []
+        if timeline_playlist_data:
+            for playlist in timeline_playlist_data:
+                name = playlist.get("name", "Unnamed")
+                playlist_names.append(name)
+        model = QStringListModel(playlist_names)
+        playlist_completer.setModel(model)
+        print(f"✅ Initial autocomplete populated with {len(playlist_names)} playlists")
 
         print("✅ Playlist Manager panel created successfully")
         return widget
