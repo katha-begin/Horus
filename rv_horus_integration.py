@@ -40,36 +40,11 @@ def get_ui_state_path():
 
 
 def save_ui_state():
-    """Save dock positions, sizes, and visibility to local config."""
+    """Save dock visibility to local config (only visibility, not positions to avoid corruption)."""
     global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
 
     try:
-        from PySide2.QtWidgets import QApplication, QMainWindow
-        from PySide2.QtCore import QByteArray
-        import base64
-
-        app = QApplication.instance()
-        if not app:
-            return
-
-        rv_main_window = None
-        for widget in app.topLevelWidgets():
-            if isinstance(widget, QMainWindow):
-                rv_main_window = widget
-                break
-
-        if not rv_main_window:
-            return
-
-        # Save window state (includes all dock positions and sizes)
-        window_state = rv_main_window.saveState()
-        window_geometry = rv_main_window.saveGeometry()
-
-        # Encode to base64 for JSON storage
-        state_b64 = base64.b64encode(window_state.data()).decode('utf-8')
-        geometry_b64 = base64.b64encode(window_geometry.data()).decode('utf-8')
-
-        # Save dock visibility separately (for menu checkmarks)
+        # Save dock visibility only
         dock_visibility = {
             'navigator': search_dock.isVisible() if search_dock else True,
             'playlist': timeline_playlist_dock.isVisible() if timeline_playlist_dock else True,
@@ -78,29 +53,26 @@ def save_ui_state():
         }
 
         ui_state = {
-            'window_state': state_b64,
-            'window_geometry': geometry_b64,
             'dock_visibility': dock_visibility,
-            'version': 1
+            'version': 2
         }
 
         state_path = get_ui_state_path()
         with open(state_path, 'w', encoding='utf-8') as f:
             json.dump(ui_state, f, indent=2)
 
-        print(f"✅ UI state saved to {state_path}")
+        print(f"✅ Dock visibility saved")
 
     except Exception as e:
         print(f"⚠️ Could not save UI state: {e}")
 
 
 def restore_ui_state():
-    """Restore dock positions, sizes, and visibility from local config."""
+    """Restore dock visibility only from local config (skip window state to avoid corruption)."""
     global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
 
     try:
         from PySide2.QtWidgets import QApplication, QMainWindow
-        from PySide2.QtCore import QByteArray
         import base64
 
         state_path = get_ui_state_path()
@@ -111,29 +83,7 @@ def restore_ui_state():
         with open(state_path, 'r', encoding='utf-8') as f:
             ui_state = json.load(f)
 
-        app = QApplication.instance()
-        if not app:
-            return False
-
-        rv_main_window = None
-        for widget in app.topLevelWidgets():
-            if isinstance(widget, QMainWindow):
-                rv_main_window = widget
-                break
-
-        if not rv_main_window:
-            return False
-
-        # Restore window state
-        if 'window_state' in ui_state:
-            state_bytes = base64.b64decode(ui_state['window_state'])
-            rv_main_window.restoreState(QByteArray(state_bytes))
-
-        if 'window_geometry' in ui_state:
-            geometry_bytes = base64.b64decode(ui_state['window_geometry'])
-            rv_main_window.restoreGeometry(QByteArray(geometry_bytes))
-
-        # Restore dock visibility
+        # Only restore dock visibility (NOT window state - it can corrupt RV's native docks)
         dock_visibility = ui_state.get('dock_visibility', {})
 
         if search_dock:
@@ -145,7 +95,7 @@ def restore_ui_state():
         if media_grid_dock:
             media_grid_dock.setVisible(dock_visibility.get('media_grid', False))
 
-        print(f"✅ UI state restored from {state_path}")
+        print(f"✅ Dock visibility restored from {state_path}")
         return True
 
     except Exception as e:
