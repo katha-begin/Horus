@@ -588,16 +588,31 @@ class HorusFileSystem:
             if not file_path or not file_path.endswith('.mov'):
                 continue
 
-            # Parse path: .../Ep02/sq0020/SH0100/comp/output/file.mov
+            # Parse path - handle two structures:
+            # 1. .../Ep02/sq0020/SH0100/comp/output/file.mov (direct)
+            # 2. .../Ep02/Sequences/sq0010/layout/output/file.mov (with Sequences folder)
             parts = file_path.split('/')
             try:
                 # Find the episode part and extract metadata
                 ep_idx = next(i for i, p in enumerate(parts) if p.startswith('Ep') or p.startswith('RD'))
                 ep = parts[ep_idx]
-                seq = parts[ep_idx + 1]
-                sh = parts[ep_idx + 2]
-                dept = parts[ep_idx + 3]
-                file_name = parts[-1]
+
+                # Check if next part is "Sequences"
+                if ep_idx + 1 < len(parts) and parts[ep_idx + 1] == "Sequences":
+                    # Structure: Ep02/Sequences/sq0010/layout/output/file.mov
+                    seq = parts[ep_idx + 2]  # sq0010
+                    dept = parts[ep_idx + 3]  # layout
+                    # Extract shot from filename (e.g., "Ep02_Sequences_sq0150_layout_layout_v001__SH0590.mov")
+                    file_name = parts[-1]
+                    sh_match = re.search(r'SH\d+', file_name)
+                    sh = sh_match.group(0) if sh_match else "SH0000"
+                else:
+                    # Structure: Ep02/sq0020/SH0100/comp/output/file.mov
+                    seq = parts[ep_idx + 1]
+                    sh = parts[ep_idx + 2]
+                    dept = parts[ep_idx + 3]
+                    file_name = parts[-1]
+
             except (StopIteration, IndexError):
                 continue
 
@@ -650,10 +665,23 @@ class HorusFileSystem:
             try:
                 ep_idx = next(i for i, p in enumerate(parts) if p.startswith('Ep') or p.startswith('RD'))
                 ep = parts[ep_idx]
-                seq = parts[ep_idx + 1]
-                sh = parts[ep_idx + 2]
-                dept = parts[ep_idx + 3]
-                file_name = parts[-1]
+
+                # Check if next part is "Sequences"
+                if ep_idx + 1 < len(parts) and parts[ep_idx + 1] == "Sequences":
+                    # Structure: Ep02/Sequences/sq0010/layout/output/file.mov
+                    seq = parts[ep_idx + 2]  # sq0010
+                    dept = parts[ep_idx + 3]  # layout
+                    # Extract shot from filename
+                    file_name = parts[-1]
+                    sh_match = re.search(r'SH\d+', file_name)
+                    sh = sh_match.group(0) if sh_match else "SH0000"
+                else:
+                    # Structure: Ep02/sq0020/SH0100/comp/output/file.mov
+                    seq = parts[ep_idx + 1]
+                    sh = parts[ep_idx + 2]
+                    dept = parts[ep_idx + 3]
+                    file_name = parts[-1]
+
             except (StopIteration, IndexError):
                 continue
 
@@ -702,10 +730,22 @@ class HorusFileSystem:
     def get_shot_comment_file_path(self, episode: str, sequence: str, shot: str) -> str:
         """Get path to shot's comment JSON file.
 
-        Per spec: {PROJECT_ROOT}/SWA/all/scene/{Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json
-        Example: /mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/.horus/SH0010_comments.json
+        Handles two directory structures:
+        1. Direct: {Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json
+           Example: /mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/.horus/SH0010_comments.json
+
+        2. Sequences folder: {Episode}/Sequences/{Sequence}/.horus/{Shot}_comments.json
+           Example: /mnt/igloo_swa_v/SWA/all/scene/Ep02/Sequences/sq0010/.horus/SH0590_comments.json
         """
-        return f"{self.scene_base}/{episode}/{sequence}/{shot}/.horus/{shot}_comments.json"
+        # Check if shot directory exists (direct structure)
+        direct_path = f"{self.scene_base}/{episode}/{sequence}/{shot}/.horus/{shot}_comments.json"
+        shot_dir = f"{self.scene_base}/{episode}/{sequence}/{shot}"
+
+        if self.provider and self.provider.directory_exists(shot_dir):
+            return direct_path
+
+        # Use Sequences folder structure
+        return f"{self.scene_base}/{episode}/Sequences/{sequence}/.horus/{shot}_comments.json"
 
     def load_shot_comments(self, episode: str, sequence: str, shot: str) -> Dict:
         """Load comments for a specific shot."""
