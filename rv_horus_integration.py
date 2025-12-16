@@ -1793,16 +1793,24 @@ def on_playlist_status_changed(new_status):
     """Handle status change in playlist table - save to JSON (SAME AS NAVIGATOR)."""
     global horus_playlists, current_playlist_id, timeline_playlist_data, horus_fs
 
+    print(f"🔔 on_playlist_status_changed called with status: {new_status}")
+
     try:
         # Get the combo box that triggered this
         from PySide2.QtWidgets import QApplication
         sender = QApplication.instance().sender()
 
+        print(f"   sender: {sender}")
+
         if not sender:
+            print("   ❌ No sender found")
             return
 
         clip_data = sender.property("item_data")  # Using shared property name
+        print(f"   clip_data: {clip_data}")
+
         if not clip_data:
+            print("   ❌ No clip_data found in sender property")
             return
 
         # Update status in the clip data
@@ -1816,8 +1824,11 @@ def on_playlist_status_changed(new_status):
             department = clip_data.get('department', '')
             version = clip_data.get('version', '')
 
+            print(f"   Shot info: {episode}/{sequence}/{shot}/{department}/{version}")
+
             if episode and sequence and shot and department and version:
                 # Use set_shot_status to save to comments JSON (SAME AS NAVIGATOR)
+                print(f"   Calling horus_fs.set_shot_status()...")
                 success = horus_fs.set_shot_status(
                     episode, sequence, shot, department, version, new_status
                 )
@@ -1825,6 +1836,8 @@ def on_playlist_status_changed(new_status):
                     print(f"✅ Updated Playlist status to: {new_status}")
                 else:
                     print(f"❌ Failed to save Playlist status")
+            else:
+                print(f"   ❌ Missing shot info - cannot save status")
 
         # Also update in playlist backend
         pm = _ensure_playlist_manager()
@@ -3941,16 +3954,24 @@ def on_navigator_status_changed(new_status):
     """Handle status change in Navigator table - save to JSON (SAME AS PLAYLIST)."""
     global horus_fs
 
+    print(f"🔔 on_navigator_status_changed called with status: {new_status}")
+
     try:
         # Get the combo box that triggered this
         from PySide2.QtWidgets import QApplication
         sender = QApplication.instance().sender()
 
+        print(f"   sender: {sender}")
+
         if not sender:
+            print("   ❌ No sender found")
             return
 
         media_item = sender.property("item_data")  # Using shared property name
+        print(f"   media_item: {media_item}")
+
         if not media_item:
+            print("   ❌ No media_item found in sender property")
             return
 
         # Update status in the media item
@@ -3964,8 +3985,11 @@ def on_navigator_status_changed(new_status):
             department = media_item.get('department', '')
             version = media_item.get('version', '')
 
+            print(f"   Shot info: {episode}/{sequence}/{shot}/{department}/{version}")
+
             if episode and sequence and shot and department and version:
                 # Use set_shot_status to save to comments JSON
+                print(f"   Calling horus_fs.set_shot_status()...")
                 success = horus_fs.set_shot_status(
                     episode, sequence, shot, department, version, new_status
                 )
@@ -3973,6 +3997,8 @@ def on_navigator_status_changed(new_status):
                     print(f"✅ Updated Navigator status to: {new_status}")
                 else:
                     print(f"❌ Failed to save Navigator status")
+            else:
+                print(f"   ❌ Missing shot info - cannot save status")
 
     except Exception as e:
         print(f"❌ Error updating Navigator status: {e}")
