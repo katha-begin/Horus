@@ -491,7 +491,7 @@ current_media_context = {
 }
 
 # Feature flags
-ENABLE_TIMELINE_PLAYLIST = True   # Enable/disable Timeline Playlist feature
+ENABLE_TIMELINE_PLAYLIST = False  # Enable/disable Timeline Playlist feature (DISABLED - not implemented)
 ENABLE_LEGACY_TIMELINE = False    # Disable legacy Timeline Sequence panel
 USE_FILE_SYSTEM_BACKEND = True    # Use new file system backend instead of sample_db
 
@@ -999,7 +999,7 @@ def create_reply_widget(reply_data):
         print(f"Error creating reply widget: {e}")
         return QWidget()
 
-def create_timeline_playlist_panel():
+def create_playlist_panel():
     """Create Playlist Manager panel with search (top) + items table (bottom).
 
     Layout:
@@ -5727,27 +5727,14 @@ def create_modular_media_browser():
         media_grid_panel = create_media_grid_panel()
         comments_panel = create_comments_panel()
 
-        # Create timeline panels based on feature flags
-        timeline_panel = None
-        timeline_playlist_panel = None
-
-        if ENABLE_TIMELINE_PLAYLIST:
-            # Create new Timeline Playlist Manager as primary timeline interface
-            timeline_playlist_panel = create_timeline_playlist_panel()
-            if timeline_playlist_panel:
-                print("✅ Timeline Playlist Manager enabled (primary timeline interface)")
-            else:
-                print("❌ Timeline Playlist Manager creation failed")
-                # Fallback to legacy timeline if playlist creation fails
-                if ENABLE_LEGACY_TIMELINE:
-                    timeline_panel = create_timeline_panel()
-                    print("⚠️  Fallback to legacy Timeline Sequence panel")
-        elif ENABLE_LEGACY_TIMELINE:
-            # Create legacy timeline panel only if explicitly enabled
-            timeline_panel = create_timeline_panel()
-            print("✅ Legacy Timeline Sequence panel enabled")
+        # Create playlist panel (always enabled)
+        print("📋 Creating Playlist Manager...")
+        playlist_panel = create_playlist_panel()
+        print(f"📋 playlist_panel result: {playlist_panel}")
+        if playlist_panel:
+            print("✅ Playlist Manager created successfully")
         else:
-            print("⚠️  No timeline interface enabled")
+            print("❌ Playlist Manager creation failed")
 
         # Validate required panels (timeline panels are optional based on feature flags)
         required_panels = [search_panel, media_grid_panel, comments_panel]
@@ -5757,10 +5744,8 @@ def create_modular_media_browser():
 
         # Apply styling to all created panels
         panels_to_style = [search_panel, media_grid_panel, comments_panel]
-        if timeline_panel:
-            panels_to_style.append(timeline_panel)
-        if timeline_playlist_panel:
-            panels_to_style.append(timeline_playlist_panel)
+        if playlist_panel:
+            panels_to_style.append(playlist_panel)
 
         for panel in panels_to_style:
             apply_rv_styling(panel)
@@ -5779,12 +5764,16 @@ def create_modular_media_browser():
 
         # Create Playlist Manager dock (left side) - Compact, resizable
         playlist_dock = None
-        if timeline_playlist_panel:
+        print(f"📋 Creating playlist_dock, playlist_panel={playlist_panel}")
+        if playlist_panel:
             playlist_dock = QDockWidget("Playlist", rv_main_window)
-            playlist_dock.setWidget(timeline_playlist_panel)
+            playlist_dock.setWidget(playlist_panel)
             playlist_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
             playlist_dock.setMinimumWidth(150)  # Compact minimum
             # No max width - fully resizable
+            print(f"✅ playlist_dock created: {playlist_dock}")
+        else:
+            print("⚠️ playlist_dock NOT created (timeline_playlist_panel is None)")
 
         # Create comments dock (right side)
         comments_dock = QDockWidget("Comments & Annotations", rv_main_window)
