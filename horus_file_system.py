@@ -418,7 +418,8 @@ class HorusFileSystem:
     def _setup_paths(self):
         """Setup derived paths."""
         self.scene_base = f"{self.project_root}/{PROJECT_NAME}/{SCENE_PATH}"
-        self.horus_data = f"{self.project_root}/{PROJECT_NAME}/{HORUS_DATA_PATH}"
+        # Note: horus_data is NOT used for comments anymore - comments are per-shot
+        # This is only kept for potential future global data needs
 
     def convert_path_for_rv(self, path: str) -> str:
         """Convert path for RV playback (always use local path if mounted)."""
@@ -695,41 +696,56 @@ class HorusFileSystem:
 
 
     # ========================================================================
-    # Comments & Status Methods
+    # Comments & Status Methods (Per-Shot Storage)
     # ========================================================================
 
-    def get_comments_file_path(self, episode: str) -> str:
-        """Get path to comments JSON file for an episode."""
-        return f"{self.horus_data}/comments/{episode}.json"
+    def get_shot_comment_file_path(self, episode: str, sequence: str, shot: str) -> str:
+        """Get path to shot's comment JSON file.
 
-    def load_comments(self, episode: str) -> Dict:
-        """Load comments for an episode."""
+        Per spec: {PROJECT_ROOT}/SWA/all/scene/{Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json
+        Example: /mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/.horus/SH0010_comments.json
+        """
+        return f"{self.scene_base}/{episode}/{sequence}/{shot}/.horus/{shot}_comments.json"
+
+    def load_shot_comments(self, episode: str, sequence: str, shot: str) -> Dict:
+        """Load comments for a specific shot."""
         if not self.provider:
             return {}
 
-        path = self.get_comments_file_path(episode)
+        path = self.get_shot_comment_file_path(episode, sequence, shot)
         content = self.provider.read_file(path)
         if content:
             try:
                 return json.loads(content)
             except json.JSONDecodeError as e:
-                print(f"Error parsing comments file: {e}")
-        return {"episode": episode, "shots": []}
+                print(f"Error parsing shot comments file: {e}")
 
-    def save_comments(self, episode: str, data: Dict) -> bool:
-        """Save comments for an episode."""
-        print(f"💾 save_comments called for episode: {episode}")
+        # Return empty structure per spec
+        return {
+            "version": "1.0",
+            "shot_info": {
+                "episode": episode,
+                "sequence": sequence,
+                "shot": shot
+            },
+            "shot_status": {},  # Status per department/version
+            "comments": []
+        }
+
+    def save_shot_comments(self, episode: str, sequence: str, shot: str, data: Dict) -> bool:
+        """Save comments for a specific shot."""
+        print(f"💾 save_shot_comments called:")
+        print(f"   episode={episode}, sequence={sequence}, shot={shot}")
 
         if not self.provider:
             print(f"   ❌ No provider available")
             return False
 
-        path = self.get_comments_file_path(episode)
+        path = self.get_shot_comment_file_path(episode, sequence, shot)
         print(f"   File path: {path}")
 
         content = json.dumps(data, indent=2)
         print(f"   Content size: {len(content)} bytes")
-        print(f"   Number of shots: {len(data.get('shots', []))}")
 
         result = self.provider.write_file(path, content)
         print(f"   Write result: {result}")
@@ -738,50 +754,33 @@ class HorusFileSystem:
     def get_shot_status(self, episode: str, sequence: str, shot: str,
                         department: str, version: str) -> str:
         """Get status for a specific shot version."""
-        comments = self.load_comments(episode)
-        for shot_data in comments.get("shots", []):
-            if (shot_data.get("sequence") == sequence and
-                shot_data.get("shot") == shot and
-                shot_data.get("department") == department and
-                shot_data.get("version") == version):
-                return shot_data.get("shot_status", "submit")
-        return "submit"
+        comments = self.load_shot_comments(episode, sequence, shot)
+        status_key = f"{department}_{version}"
+        return comments.get("shot_status", {}).get(status_key, "submit")
 
     def set_shot_status(self, episode: str, sequence: str, shot: str,
                         department: str, version: str, status: str) -> bool:
-        """Set status for a specific shot version."""
+        """Set status for a specific shot version.
+
+        Stores status in per-shot JSON file per specification.
+        """
         print(f"📝 set_shot_status called:")
         print(f"   episode={episode}, sequence={sequence}, shot={shot}")
         print(f"   department={department}, version={version}, status={status}")
 
-        comments = self.load_comments(episode)
-        print(f"   Loaded comments: {len(comments.get('shots', []))} existing shots")
+        comments = self.load_shot_comments(episode, sequence, shot)
+        print(f"   Loaded shot comments")
 
-        # Find or create shot entry
-        found = False
-        for shot_data in comments.get("shots", []):
-            if (shot_data.get("sequence") == sequence and
-                shot_data.get("shot") == shot and
-                shot_data.get("department") == department and
-                shot_data.get("version") == version):
-                print(f"   ✅ Found existing shot entry, updating status")
-                shot_data["shot_status"] = status
-                found = True
-                break
+        # Store status with key: department_version
+        status_key = f"{department}_{version}"
+        if "shot_status" not in comments:
+            comments["shot_status"] = {}
 
-        if not found:
-            print(f"   ➕ Creating new shot entry")
-            comments.setdefault("shots", []).append({
-                "sequence": sequence,
-                "shot": shot,
-                "department": department,
-                "version": version,
-                "shot_status": status,
-                "comments": []
-            })
+        comments["shot_status"][status_key] = status
+        print(f"   Updated status for key: {status_key}")
 
-        print(f"   Saving comments to JSON...")
-        result = self.save_comments(episode, comments)
+        print(f"   Saving shot comments to JSON...")
+        result = self.save_shot_comments(episode, sequence, shot, comments)
         print(f"   Save result: {result}")
         return result
 
@@ -792,9 +791,10 @@ class HorusFileSystem:
     def get_playlists_file_path(self) -> str:
         """Get path to playlists JSON file.
 
-        Stored in all/scene/.horus/ which has write permissions.
+        Per spec: {PROJECT_ROOT}/SWA/all/scene/.horus/playlists.json
+        Example: /mnt/igloo_swa_v/SWA/all/scene/.horus/playlists.json
         """
-        return f"{self.project_root}/all/scene/.horus/playlists.json"
+        return f"{self.project_root}/{PROJECT_NAME}/all/scene/.horus/playlists.json"
 
     def load_playlists(self) -> List[Dict]:
         """Load all playlists."""
