@@ -104,11 +104,11 @@ def restore_ui_state():
 
 
 def setup_horus_menu():
-    """Add Horus menu to RV's menu bar between Window and Help."""
+    """Add Horus menu to RV's menu bar."""
     global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
 
     try:
-        from PySide2.QtWidgets import QApplication, QMainWindow, QMenu, QAction
+        from PySide2.QtWidgets import QApplication, QMainWindow, QMenu, QAction, QMenuBar
 
         app = QApplication.instance()
         if not app:
@@ -132,17 +132,18 @@ def setup_horus_menu():
 
         # Debug: Print all menu items
         print("📋 RV Menu Bar items:")
-        for action in menubar.actions():
+        all_actions = menubar.actions()
+        for i, action in enumerate(all_actions):
             menu_text = action.text()
-            print(f"   - '{menu_text}'")
+            print(f"   [{i}] '{menu_text}'")
 
-        # Find the Help menu to insert before it (try multiple patterns)
+        # Find Help menu to insert before (or just add at end)
         help_action = None
-        for action in menubar.actions():
-            text = action.text().replace('&', '').strip()
-            if text.lower() == 'help':
+        for action in all_actions:
+            text = action.text().replace('&', '').strip().lower()
+            if text == 'help':
                 help_action = action
-                print(f"   Found Help menu: '{action.text()}'")
+                print(f"   Found Help menu at index")
                 break
 
         # Create Horus menu
@@ -152,28 +153,28 @@ def setup_horus_menu():
         horus_menu.addSection("Panels")
 
         # Navigator toggle
-        navigator_action = QAction("📁 Navigator", rv_main_window)
+        navigator_action = QAction("Navigator", rv_main_window)
         navigator_action.setCheckable(True)
         navigator_action.setChecked(search_dock.isVisible() if search_dock else True)
         navigator_action.triggered.connect(lambda checked: toggle_dock_visibility('navigator', checked))
         horus_menu.addAction(navigator_action)
 
         # Playlist toggle
-        playlist_action = QAction("📋 Playlist", rv_main_window)
+        playlist_action = QAction("Playlist", rv_main_window)
         playlist_action.setCheckable(True)
         playlist_action.setChecked(timeline_playlist_dock.isVisible() if timeline_playlist_dock else True)
         playlist_action.triggered.connect(lambda checked: toggle_dock_visibility('playlist', checked))
         horus_menu.addAction(playlist_action)
 
         # Comments toggle
-        comments_action = QAction("💬 Comments", rv_main_window)
+        comments_action = QAction("Comments", rv_main_window)
         comments_action.setCheckable(True)
         comments_action.setChecked(comments_dock.isVisible() if comments_dock else True)
         comments_action.triggered.connect(lambda checked: toggle_dock_visibility('comments', checked))
         horus_menu.addAction(comments_action)
 
         # Media Grid toggle (hidden by default)
-        media_grid_action = QAction("🖼️ Media Grid", rv_main_window)
+        media_grid_action = QAction("Media Grid", rv_main_window)
         media_grid_action.setCheckable(True)
         media_grid_action.setChecked(media_grid_dock.isVisible() if media_grid_dock else False)
         media_grid_action.triggered.connect(lambda checked: toggle_dock_visibility('media_grid', checked))
@@ -185,15 +186,18 @@ def setup_horus_menu():
         horus_menu.addSection("Actions")
 
         # Reset Layout action
-        reset_layout_action = QAction("🔄 Reset Layout", rv_main_window)
+        reset_layout_action = QAction("Reset Layout", rv_main_window)
         reset_layout_action.triggered.connect(reset_dock_layout)
         horus_menu.addAction(reset_layout_action)
 
-        # Insert Horus menu before Help menu
+        # Add Horus menu to menubar
         if help_action:
             menubar.insertMenu(help_action, horus_menu)
         else:
             menubar.addMenu(horus_menu)
+
+        # Force menubar update
+        menubar.update()
 
         # Store menu actions for updating checkmarks
         globals()['horus_menu'] = horus_menu
