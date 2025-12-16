@@ -591,15 +591,20 @@ class HorusFileSystem:
             # Parse path: .../Ep02/sq0020/SH0100/comp/output/file.mov
             parts = file_path.split('/')
             try:
-                # Find the episode part and extract metadata
+                # Find episode (starts with 'Ep' or 'RD')
                 ep_idx = next(i for i, p in enumerate(parts) if p.startswith('Ep') or p.startswith('RD'))
                 ep = parts[ep_idx]
 
-                # Find sequence (must start with 'sq', skip 'Sequences' or 'Media' folders)
+                # Find sequence (starts with 'sq')
                 seq_idx = next(i for i in range(ep_idx + 1, len(parts)) if parts[i].startswith('sq'))
                 seq = parts[seq_idx]
-                sh = parts[seq_idx + 1]
-                dept = parts[seq_idx + 2]
+
+                # Find shot (starts with 'SH')
+                sh_idx = next(i for i in range(seq_idx + 1, len(parts)) if parts[i].startswith('SH'))
+                sh = parts[sh_idx]
+
+                # Department is after shot
+                dept = parts[sh_idx + 1]
                 file_name = parts[-1]
             except (StopIteration, IndexError):
                 continue
@@ -651,14 +656,20 @@ class HorusFileSystem:
             file_path = file_path.replace('\\', '/')
             parts = file_path.split('/')
             try:
+                # Find episode (starts with 'Ep' or 'RD')
                 ep_idx = next(i for i, p in enumerate(parts) if p.startswith('Ep') or p.startswith('RD'))
                 ep = parts[ep_idx]
 
-                # Find sequence (must start with 'sq', skip 'Sequences' or 'Media' folders)
+                # Find sequence (starts with 'sq')
                 seq_idx = next(i for i in range(ep_idx + 1, len(parts)) if parts[i].startswith('sq'))
                 seq = parts[seq_idx]
-                sh = parts[seq_idx + 1]
-                dept = parts[seq_idx + 2]
+
+                # Find shot (starts with 'SH')
+                sh_idx = next(i for i in range(seq_idx + 1, len(parts)) if parts[i].startswith('SH'))
+                sh = parts[sh_idx]
+
+                # Department is after shot
+                dept = parts[sh_idx + 1]
                 file_name = parts[-1]
             except (StopIteration, IndexError):
                 continue
