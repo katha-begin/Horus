@@ -797,6 +797,7 @@ def create_timeline_playlist_panel():
 
         # ===== Connect signals =====
         playlist_search.textChanged.connect(on_playlist_search_changed)
+        playlist_search.returnPressed.connect(on_playlist_search_enter_pressed)
         playlist_completer.activated.connect(on_playlist_selected_from_completer)
 
         # Load initial data
@@ -1179,9 +1180,62 @@ def update_playlist_autocomplete():
 
 
 def on_playlist_search_changed(text):
-    """Handle playlist search text change."""
-    # Just for filtering - actual selection happens in on_playlist_selected_from_completer
-    pass
+    """Handle playlist search text change - show completer popup."""
+    global timeline_playlist_dock
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        widget = timeline_playlist_dock.widget()
+        completer = getattr(widget, 'playlist_completer', None)
+        playlist_search = getattr(widget, 'playlist_search', None)
+
+        if completer and playlist_search and text:
+            # Make sure completer popup shows
+            completer.complete()
+    except Exception as e:
+        print(f"❌ Error in search changed: {e}")
+
+
+def on_playlist_search_enter_pressed():
+    """Handle Enter key in playlist search - select matching playlist."""
+    global timeline_playlist_dock, timeline_playlist_data
+
+    if not timeline_playlist_dock or not timeline_playlist_dock.widget():
+        return
+
+    try:
+        widget = timeline_playlist_dock.widget()
+        playlist_search = getattr(widget, 'playlist_search', None)
+
+        if not playlist_search:
+            return
+
+        search_text = playlist_search.text().strip()
+        if not search_text:
+            return
+
+        # Find playlist that matches (case-insensitive)
+        for playlist in timeline_playlist_data or []:
+            name = playlist.get("name", "")
+            if name.lower() == search_text.lower():
+                # Found exact match
+                on_playlist_selected_from_completer(name)
+                return
+
+        # No exact match - try partial match (first match)
+        for playlist in timeline_playlist_data or []:
+            name = playlist.get("name", "")
+            if search_text.lower() in name.lower():
+                on_playlist_selected_from_completer(name)
+                playlist_search.setText(name)  # Update search text
+                return
+
+        print(f"❌ No playlist found matching: {search_text}")
+
+    except Exception as e:
+        print(f"❌ Error in search enter: {e}")
 
 
 def on_playlist_selected_from_completer(playlist_name):
