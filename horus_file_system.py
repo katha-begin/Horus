@@ -588,31 +588,19 @@ class HorusFileSystem:
             if not file_path or not file_path.endswith('.mov'):
                 continue
 
-            # Parse path - handle two structures:
-            # 1. .../Ep02/sq0020/SH0100/comp/output/file.mov (direct)
-            # 2. .../Ep02/Sequences/sq0010/layout/output/file.mov (with Sequences folder)
+            # Parse path: .../Ep02/sq0020/SH0100/comp/output/file.mov
             parts = file_path.split('/')
             try:
                 # Find the episode part and extract metadata
                 ep_idx = next(i for i, p in enumerate(parts) if p.startswith('Ep') or p.startswith('RD'))
                 ep = parts[ep_idx]
 
-                # Check if next part is "Sequences"
-                if ep_idx + 1 < len(parts) and parts[ep_idx + 1] == "Sequences":
-                    # Structure: Ep02/Sequences/sq0010/layout/output/file.mov
-                    seq = parts[ep_idx + 2]  # sq0010
-                    dept = parts[ep_idx + 3]  # layout
-                    # Extract shot from filename (e.g., "Ep02_Sequences_sq0150_layout_layout_v001__SH0590.mov")
-                    file_name = parts[-1]
-                    sh_match = re.search(r'SH\d+', file_name)
-                    sh = sh_match.group(0) if sh_match else "SH0000"
-                else:
-                    # Structure: Ep02/sq0020/SH0100/comp/output/file.mov
-                    seq = parts[ep_idx + 1]
-                    sh = parts[ep_idx + 2]
-                    dept = parts[ep_idx + 3]
-                    file_name = parts[-1]
-
+                # Find sequence (must start with 'sq', skip 'Sequences' or 'Media' folders)
+                seq_idx = next(i for i in range(ep_idx + 1, len(parts)) if parts[i].startswith('sq'))
+                seq = parts[seq_idx]
+                sh = parts[seq_idx + 1]
+                dept = parts[seq_idx + 2]
+                file_name = parts[-1]
             except (StopIteration, IndexError):
                 continue
 
@@ -666,22 +654,12 @@ class HorusFileSystem:
                 ep_idx = next(i for i, p in enumerate(parts) if p.startswith('Ep') or p.startswith('RD'))
                 ep = parts[ep_idx]
 
-                # Check if next part is "Sequences"
-                if ep_idx + 1 < len(parts) and parts[ep_idx + 1] == "Sequences":
-                    # Structure: Ep02/Sequences/sq0010/layout/output/file.mov
-                    seq = parts[ep_idx + 2]  # sq0010
-                    dept = parts[ep_idx + 3]  # layout
-                    # Extract shot from filename
-                    file_name = parts[-1]
-                    sh_match = re.search(r'SH\d+', file_name)
-                    sh = sh_match.group(0) if sh_match else "SH0000"
-                else:
-                    # Structure: Ep02/sq0020/SH0100/comp/output/file.mov
-                    seq = parts[ep_idx + 1]
-                    sh = parts[ep_idx + 2]
-                    dept = parts[ep_idx + 3]
-                    file_name = parts[-1]
-
+                # Find sequence (must start with 'sq', skip 'Sequences' or 'Media' folders)
+                seq_idx = next(i for i in range(ep_idx + 1, len(parts)) if parts[i].startswith('sq'))
+                seq = parts[seq_idx]
+                sh = parts[seq_idx + 1]
+                dept = parts[seq_idx + 2]
+                file_name = parts[-1]
             except (StopIteration, IndexError):
                 continue
 
@@ -730,22 +708,10 @@ class HorusFileSystem:
     def get_shot_comment_file_path(self, episode: str, sequence: str, shot: str) -> str:
         """Get path to shot's comment JSON file.
 
-        Handles two directory structures:
-        1. Direct: {Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json
-           Example: /mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/.horus/SH0010_comments.json
-
-        2. Sequences folder: {Episode}/Sequences/{Sequence}/.horus/{Shot}_comments.json
-           Example: /mnt/igloo_swa_v/SWA/all/scene/Ep02/Sequences/sq0010/.horus/SH0590_comments.json
+        Per spec: {PROJECT_ROOT}/SWA/all/scene/{Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json
+        Example: /mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/.horus/SH0010_comments.json
         """
-        # Check if shot directory exists (direct structure)
-        direct_path = f"{self.scene_base}/{episode}/{sequence}/{shot}/.horus/{shot}_comments.json"
-        shot_dir = f"{self.scene_base}/{episode}/{sequence}/{shot}"
-
-        if self.provider and self.provider.directory_exists(shot_dir):
-            return direct_path
-
-        # Use Sequences folder structure
-        return f"{self.scene_base}/{episode}/Sequences/{sequence}/.horus/{shot}_comments.json"
+        return f"{self.scene_base}/{episode}/{sequence}/{shot}/.horus/{shot}_comments.json"
 
     def load_shot_comments(self, episode: str, sequence: str, shot: str) -> Dict:
         """Load comments for a specific shot."""
@@ -760,15 +726,15 @@ class HorusFileSystem:
             except json.JSONDecodeError as e:
                 print(f"Error parsing shot comments file: {e}")
 
-        # Return empty structure per spec
+        # Return empty structure per spec - status is in shot_info
         return {
             "version": "1.0",
             "shot_info": {
                 "episode": episode,
                 "sequence": sequence,
-                "shot": shot
+                "shot": shot,
+                "status": "submit"  # Default status
             },
-            "shot_status": {},  # Status per department/version
             "comments": []
         }
 
@@ -792,17 +758,20 @@ class HorusFileSystem:
         return result
 
     def get_shot_status(self, episode: str, sequence: str, shot: str,
-                        department: str, version: str) -> str:
-        """Get status for a specific shot version."""
+                        department: str = None, version: str = None) -> str:
+        """Get status for a shot.
+
+        Status is stored at shot level in shot_info.status, not per department/version.
+        """
         comments = self.load_shot_comments(episode, sequence, shot)
-        status_key = f"{department}_{version}"
-        return comments.get("shot_status", {}).get(status_key, "submit")
+        return comments.get("shot_info", {}).get("status", "submit")
 
     def set_shot_status(self, episode: str, sequence: str, shot: str,
                         department: str, version: str, status: str) -> bool:
-        """Set status for a specific shot version.
+        """Set status for a shot.
 
-        Stores status in per-shot JSON file per specification.
+        Per spec: Status is stored in shot_info.status (shot-level, not per version).
+        Comments are stored per-shot at: {Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json
         """
         print(f"📝 set_shot_status called:")
         print(f"   episode={episode}, sequence={sequence}, shot={shot}")
@@ -811,13 +780,16 @@ class HorusFileSystem:
         comments = self.load_shot_comments(episode, sequence, shot)
         print(f"   Loaded shot comments")
 
-        # Store status with key: department_version
-        status_key = f"{department}_{version}"
-        if "shot_status" not in comments:
-            comments["shot_status"] = {}
+        # Store status in shot_info per spec
+        if "shot_info" not in comments:
+            comments["shot_info"] = {
+                "episode": episode,
+                "sequence": sequence,
+                "shot": shot
+            }
 
-        comments["shot_status"][status_key] = status
-        print(f"   Updated status for key: {status_key}")
+        comments["shot_info"]["status"] = status
+        print(f"   Updated shot_info.status to: {status}")
 
         print(f"   Saving shot comments to JSON...")
         result = self.save_shot_comments(episode, sequence, shot, comments)
