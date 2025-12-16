@@ -1079,35 +1079,8 @@ def create_playlist_panel():
         playlist_search._playlist_model = playlist_model
         playlist_search._playlist_completer = playlist_completer
 
-        # Connect signals to show dropdown on click/focus (only when empty)
-        def show_dropdown_on_focus():
-            """Show all completions when search box gets focus and is empty."""
-            # Only show dropdown if search box is empty
-            if playlist_search.text().strip():
-                return  # User has typed something, let normal autocomplete work
-
-            # Get model from widget (not from closure) to ensure we get updated data
-            model = getattr(playlist_search, '_playlist_model', None)
-            completer = getattr(playlist_search, '_playlist_completer', None)
-            if completer and model and model.rowCount() > 0:
-                completer.setCompletionPrefix("")
-                completer.complete()
-
-        # Use event filter to detect focus/click
-        from PySide2.QtCore import QObject, QEvent
-
-        class SearchFocusFilter(QObject):
-            def eventFilter(self, obj, event):
-                # Only show dropdown on initial click, not on every focus
-                if event.type() == QEvent.MouseButtonPress:
-                    # Delay slightly to ensure widget is ready
-                    from PySide2.QtCore import QTimer
-                    QTimer.singleShot(100, show_dropdown_on_focus)
-                return False
-
-        focus_filter = SearchFocusFilter(playlist_search)
-        playlist_search.installEventFilter(focus_filter)
-        playlist_search._focus_filter = focus_filter  # Keep reference
+        # No auto-show dropdown - let user type to filter
+        # Completer will automatically show matches as user types
 
         layout.addWidget(playlist_search)
 
@@ -1772,11 +1745,13 @@ def load_playlist_items_to_table(playlist_data):
             return
 
         # Populate table with clips
+        from PySide2.QtWidgets import QComboBox
+
         for clip in clips:
             row = table.rowCount()
             table.insertRow(row)
 
-            # Name column: {ep}_{shot} format (same as Navigator)
+            # Name column: {ep}_{shot} format (same as Navigator) - READ ONLY
             episode = clip.get("episode", "")
             shot = clip.get("shot", clip.get("name", "Unknown"))
             # Format name as {ep}_{shot}, e.g. "Ep02_SH0010"
@@ -1788,23 +1763,47 @@ def load_playlist_items_to_table(playlist_data):
                 name = clip.get("name", "Unknown")
             name_item = QTableWidgetItem(name)
             name_item.setData(Qt.UserRole, clip)  # Store full clip data
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)  # Read-only
             table.setItem(row, 0, name_item)
 
-            # Dept column
+            # Dept column - READ ONLY
             dept = clip.get("department", "")
             dept_item = QTableWidgetItem(dept)
+            dept_item.setFlags(dept_item.flags() & ~Qt.ItemIsEditable)  # Read-only
             table.setItem(row, 1, dept_item)
 
-            # Version column
+            # Version column - READ ONLY
             version = clip.get("version", "v001")
             version_item = QTableWidgetItem(version)
+            version_item.setFlags(version_item.flags() & ~Qt.ItemIsEditable)  # Read-only
             table.setItem(row, 2, version_item)
 
-            # Status column with icon (same style as Navigator)
+            # Status column - DROPDOWN
             status = clip.get("status", "submit")
-            status_icon = "🟢" if status == "approved" else "🔴" if status == "need fix" else "🟡"
-            status_item = QTableWidgetItem(f"{status_icon} {status}")
-            table.setItem(row, 3, status_item)
+            status_combo = QComboBox()
+            status_combo.addItems(["approved", "submit", "need fix", "on hold"])
+            status_combo.setCurrentText(status)
+            status_combo.setStyleSheet("""
+                QComboBox {
+                    background-color: #3a3a3a;
+                    color: #e0e0e0;
+                    border: 1px solid #555555;
+                    padding: 2px 5px;
+                }
+                QComboBox::drop-down {
+                    border: none;
+                }
+                QComboBox QAbstractItemView {
+                    background-color: #3a3a3a;
+                    color: #e0e0e0;
+                    selection-background-color: #0078d4;
+                }
+            """)
+            # Store clip data on combo box for later retrieval
+            status_combo.setProperty("clip_data", clip)
+            status_combo.setProperty("row", row)
+            status_combo.currentTextChanged.connect(on_playlist_status_changed)
+            table.setCellWidget(row, 3, status_combo)
 
         print(f"📊 Loaded {len(clips)} clips into playlist table")
 
@@ -1812,9 +1811,55 @@ def load_playlist_items_to_table(playlist_data):
         print(f"❌ Error loading playlist items: {e}")
 
 
+def on_playlist_status_changed(new_status):
+    """Handle status change in playlist table."""
+    global horus_playlists, current_playlist_id, timeline_playlist_data
+
+    try:
+        # Get the combo box that triggered this
+        from PySide2.QtWidgets import QComboBox
+        sender = None
+        for obj in QComboBox.findChildren(QComboBox):
+            if obj.currentText() == new_status:
+                sender = obj
+                break
+
+        if not sender:
+            # Fallback: find sender from QObject
+            from PySide2.QtCore import QObject
+            sender = QObject.sender()
+
+        if not sender:
+            return
+
+        clip_data = sender.property("clip_data")
+        if not clip_data:
+            return
+
+        # Update clip status in backend
+        pm = _ensure_playlist_manager()
+        if not pm or not current_playlist_id:
+            return
+
+        clip_id = clip_data.get("_id")
+        if clip_id:
+            # Update status in backend
+            pm.update_clip(current_playlist_id, clip_id, {"status": new_status})
+
+            # Reload playlist data
+            timeline_playlist_data = pm.load_playlists()
+
+            print(f"✅ Updated clip status to: {new_status}")
+
+    except Exception as e:
+        print(f"❌ Error updating playlist status: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def on_playlist_table_context_menu(position):
-    """Handle right-click on playlist table - show context menu."""
-    global timeline_playlist_dock
+    """Handle right-click on playlist table - show context menu (same as Navigator)."""
+    global timeline_playlist_dock, timeline_playlist_data
 
     if not timeline_playlist_dock or not timeline_playlist_dock.widget():
         return
@@ -1834,19 +1879,150 @@ def on_playlist_table_context_menu(position):
 
         menu = QMenu(table)
 
-        remove_action = menu.addAction("🗑️ Remove from Playlist")
+        # Add to playlist submenu (same as Navigator)
+        add_to_playlist_menu = menu.addMenu("➕ Add to Playlist")
+
+        # Load playlists if not loaded
+        if not timeline_playlist_data:
+            load_timeline_playlist_data()
+
+        if timeline_playlist_data:
+            for playlist in timeline_playlist_data:
+                playlist_name = playlist.get("name", "Unnamed")
+                playlist_id = playlist.get("_id")
+                action = add_to_playlist_menu.addAction(playlist_name)
+                action.setData(playlist_id)
+        else:
+            no_playlist_action = add_to_playlist_menu.addAction("(No playlists available)")
+            no_playlist_action.setEnabled(False)
+
+        add_to_playlist_menu.addSeparator()
+        new_playlist_action = add_to_playlist_menu.addAction("+ Create New Playlist...")
+
+        menu.addSeparator()
+        remove_action = menu.addAction("🗑️ Remove from Current Playlist")
         menu.addSeparator()
         load_action = menu.addAction("▶️ Load in RV")
 
         action = menu.exec_(table.viewport().mapToGlobal(position))
 
-        if action == remove_action:
+        if action == new_playlist_action:
+            # Create new playlist and add selected items to it
+            create_new_playlist_with_playlist_items(selected_rows, table)
+        elif action == remove_action:
             remove_selected_from_playlist()
         elif action == load_action:
             load_selected_playlist_item_in_rv()
+        elif action and action.data():
+            # Add to existing playlist
+            playlist_id = action.data()
+            add_playlist_items_to_playlist(playlist_id, selected_rows, table)
 
     except Exception as e:
         print(f"❌ Error showing context menu: {e}")
+
+
+def create_new_playlist_with_playlist_items(selected_rows, table):
+    """Create new playlist and add selected items from playlist table to it."""
+    global horus_playlists, timeline_playlist_data
+
+    try:
+        from PySide2.QtWidgets import QInputDialog
+        from PySide2.QtCore import Qt
+
+        # Ask for playlist name
+        playlist_name, ok = QInputDialog.getText(None, "New Playlist", "Enter playlist name:")
+        if not ok or not playlist_name.strip():
+            return
+
+        # Create playlist
+        pm = _ensure_playlist_manager()
+        if not pm:
+            return
+
+        playlist_id = pm.create_playlist(playlist_name.strip())
+        if not playlist_id:
+            print("❌ Failed to create playlist")
+            return
+
+        # Add selected items to new playlist
+        added_count = 0
+        for index in selected_rows:
+            row = index.row()
+            name_item = table.item(row, 0)
+            if not name_item:
+                continue
+
+            clip_data = name_item.data(Qt.UserRole)
+            if not clip_data:
+                continue
+
+            # Add clip to new playlist
+            clip_id = pm.add_clip(playlist_id, clip_data)
+            if clip_id:
+                added_count += 1
+
+        # Reload data
+        timeline_playlist_data = pm.load_playlists()
+        update_playlist_autocomplete()
+
+        print(f"✅ Created playlist '{playlist_name}' with {added_count} items")
+
+    except Exception as e:
+        print(f"❌ Error creating playlist: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def add_playlist_items_to_playlist(playlist_id, selected_rows, table):
+    """Add selected items from playlist table to another playlist."""
+    global horus_playlists, timeline_playlist_data
+
+    try:
+        from PySide2.QtWidgets import QMessageBox
+        from PySide2.QtCore import Qt
+
+        pm = _ensure_playlist_manager()
+        if not pm:
+            return
+
+        added_count = 0
+        for index in selected_rows:
+            row = index.row()
+            name_item = table.item(row, 0)
+            if not name_item:
+                continue
+
+            clip_data = name_item.data(Qt.UserRole)
+            if not clip_data:
+                continue
+
+            # Add clip to playlist
+            clip_id = pm.add_clip(playlist_id, clip_data)
+            if clip_id:
+                added_count += 1
+
+        # Reload data
+        timeline_playlist_data = pm.load_playlists()
+        update_playlist_autocomplete()
+
+        # Get playlist name
+        playlist_name = "Unknown"
+        for p in timeline_playlist_data or []:
+            if p.get("_id") == playlist_id:
+                playlist_name = p.get("name", "Unknown")
+                break
+
+        print(f"✅ Added {added_count} items to playlist: {playlist_name}")
+        QMessageBox.information(
+            None, "Added to Playlist",
+            f"Added {added_count} item(s) to '{playlist_name}'"
+        )
+
+    except Exception as e:
+        print(f"❌ Error adding to playlist: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def on_playlist_item_double_click(item):
