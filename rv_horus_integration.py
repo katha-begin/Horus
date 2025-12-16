@@ -3027,9 +3027,11 @@ def apply_filters_fs():
             seq = sequence if sequence != "All" else None
             sh = shot if shot != "All" else None
             dept = department if department != "All" else None
+            print(f"🔍 Filter: ep={episode}, seq={seq}, shot={sh}, dept={dept}, latest={latest_only}")
             media_items = horus_fs.list_media_files(
                 episode, seq, sh, dept, latest_only=latest_only
             )
+            print(f"📋 Found {len(media_items)} media files")
 
         # Apply status filter
         if status != "All":
