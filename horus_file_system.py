@@ -614,8 +614,9 @@ class HorusFileSystem:
             version = self._extract_version(file_name)
             key = f"{ep}_{sh}_{dept}"
 
-            # Load actual status from JSON file
-            status = self.get_shot_status(ep, seq, sh, dept, version)
+            # TODO: Load status from cache for efficiency
+            # For now, hardcode to "submit" - will implement batch loading
+            status = "submit"
 
             media_item = {
                 "file_name": file_name,
@@ -682,8 +683,9 @@ class HorusFileSystem:
             version = self._extract_version(file_name)
             key = f"{ep}_{sh}_{dept}"
 
-            # Load actual status from JSON file
-            status = self.get_shot_status(ep, seq, sh, dept, version)
+            # TODO: Load status from cache for efficiency
+            # For now, hardcode to "submit" - will implement batch loading
+            status = "submit"
 
             media_item = {
                 "file_name": file_name,

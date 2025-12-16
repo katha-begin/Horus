@@ -1778,14 +1778,9 @@ def load_playlist_items_to_table(playlist_data):
             version_item.setFlags(version_item.flags() & ~Qt.ItemIsEditable)  # Read-only
             table.setItem(row, 2, version_item)
 
-            # Status column - DROPDOWN (load CURRENT status from JSON, not from playlist)
-            # Get current status from shot comments JSON file
-            sequence = clip.get("sequence", "")
-            if horus_fs and episode and sequence and shot and dept and version:
-                status = horus_fs.get_shot_status(episode, sequence, shot, dept, version)
-            else:
-                status = clip.get("status", "submit")  # Fallback to playlist data
-
+            # Status column - DROPDOWN
+            # TODO: Load from cache for efficiency - for now use playlist data
+            status = clip.get("status", "submit")
             status_combo = create_status_dropdown(status, clip, on_playlist_status_changed)
             table.setCellWidget(row, 3, status_combo)
 
