@@ -25,6 +25,325 @@ except ImportError as e:
     print(f"⚠️ Horus File System module not available: {e}")
 
 # ============================================================================
+# UI State Management - Save/Restore dock positions, sizes, visibility
+# ============================================================================
+
+def get_ui_state_path():
+    """Get path to UI state config file (local user config)."""
+    if sys.platform == 'win32':
+        config_dir = Path(os.environ.get('APPDATA', '')) / 'Horus'
+    else:
+        config_dir = Path.home() / '.config' / 'Horus'
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / 'ui_state.json'
+
+
+def save_ui_state():
+    """Save dock positions, sizes, and visibility to local config."""
+    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
+
+    try:
+        from PySide2.QtWidgets import QApplication, QMainWindow
+        from PySide2.QtCore import QByteArray
+        import base64
+
+        app = QApplication.instance()
+        if not app:
+            return
+
+        rv_main_window = None
+        for widget in app.topLevelWidgets():
+            if isinstance(widget, QMainWindow):
+                rv_main_window = widget
+                break
+
+        if not rv_main_window:
+            return
+
+        # Save window state (includes all dock positions and sizes)
+        window_state = rv_main_window.saveState()
+        window_geometry = rv_main_window.saveGeometry()
+
+        # Encode to base64 for JSON storage
+        state_b64 = base64.b64encode(window_state.data()).decode('utf-8')
+        geometry_b64 = base64.b64encode(window_geometry.data()).decode('utf-8')
+
+        # Save dock visibility separately (for menu checkmarks)
+        dock_visibility = {
+            'navigator': search_dock.isVisible() if search_dock else True,
+            'playlist': timeline_playlist_dock.isVisible() if timeline_playlist_dock else True,
+            'comments': comments_dock.isVisible() if comments_dock else True,
+            'media_grid': media_grid_dock.isVisible() if media_grid_dock else False,
+        }
+
+        ui_state = {
+            'window_state': state_b64,
+            'window_geometry': geometry_b64,
+            'dock_visibility': dock_visibility,
+            'version': 1
+        }
+
+        state_path = get_ui_state_path()
+        with open(state_path, 'w', encoding='utf-8') as f:
+            json.dump(ui_state, f, indent=2)
+
+        print(f"✅ UI state saved to {state_path}")
+
+    except Exception as e:
+        print(f"⚠️ Could not save UI state: {e}")
+
+
+def restore_ui_state():
+    """Restore dock positions, sizes, and visibility from local config."""
+    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
+
+    try:
+        from PySide2.QtWidgets import QApplication, QMainWindow
+        from PySide2.QtCore import QByteArray
+        import base64
+
+        state_path = get_ui_state_path()
+        if not state_path.exists():
+            print("ℹ️ No saved UI state found, using defaults")
+            return False
+
+        with open(state_path, 'r', encoding='utf-8') as f:
+            ui_state = json.load(f)
+
+        app = QApplication.instance()
+        if not app:
+            return False
+
+        rv_main_window = None
+        for widget in app.topLevelWidgets():
+            if isinstance(widget, QMainWindow):
+                rv_main_window = widget
+                break
+
+        if not rv_main_window:
+            return False
+
+        # Restore window state
+        if 'window_state' in ui_state:
+            state_bytes = base64.b64decode(ui_state['window_state'])
+            rv_main_window.restoreState(QByteArray(state_bytes))
+
+        if 'window_geometry' in ui_state:
+            geometry_bytes = base64.b64decode(ui_state['window_geometry'])
+            rv_main_window.restoreGeometry(QByteArray(geometry_bytes))
+
+        # Restore dock visibility
+        dock_visibility = ui_state.get('dock_visibility', {})
+
+        if search_dock:
+            search_dock.setVisible(dock_visibility.get('navigator', True))
+        if timeline_playlist_dock:
+            timeline_playlist_dock.setVisible(dock_visibility.get('playlist', True))
+        if comments_dock:
+            comments_dock.setVisible(dock_visibility.get('comments', True))
+        if media_grid_dock:
+            media_grid_dock.setVisible(dock_visibility.get('media_grid', False))
+
+        print(f"✅ UI state restored from {state_path}")
+        return True
+
+    except Exception as e:
+        print(f"⚠️ Could not restore UI state: {e}")
+        return False
+
+
+def setup_horus_menu():
+    """Add Horus menu to RV's menu bar between Window and Help."""
+    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
+
+    try:
+        from PySide2.QtWidgets import QApplication, QMainWindow, QMenu, QAction
+
+        app = QApplication.instance()
+        if not app:
+            return
+
+        rv_main_window = None
+        for widget in app.topLevelWidgets():
+            if isinstance(widget, QMainWindow):
+                rv_main_window = widget
+                break
+
+        if not rv_main_window:
+            return
+
+        menubar = rv_main_window.menuBar()
+        if not menubar:
+            return
+
+        # Find the Help menu to insert before it
+        help_menu = None
+        help_action = None
+        for action in menubar.actions():
+            if action.text().replace('&', '') == 'Help':
+                help_action = action
+                help_menu = action.menu()
+                break
+
+        # Create Horus menu
+        horus_menu = QMenu("&Horus", rv_main_window)
+
+        # --- Panels Section ---
+        horus_menu.addSection("Panels")
+
+        # Navigator toggle
+        navigator_action = QAction("📁 Navigator", rv_main_window)
+        navigator_action.setCheckable(True)
+        navigator_action.setChecked(search_dock.isVisible() if search_dock else True)
+        navigator_action.triggered.connect(lambda checked: toggle_dock_visibility('navigator', checked))
+        horus_menu.addAction(navigator_action)
+
+        # Playlist toggle
+        playlist_action = QAction("📋 Playlist", rv_main_window)
+        playlist_action.setCheckable(True)
+        playlist_action.setChecked(timeline_playlist_dock.isVisible() if timeline_playlist_dock else True)
+        playlist_action.triggered.connect(lambda checked: toggle_dock_visibility('playlist', checked))
+        horus_menu.addAction(playlist_action)
+
+        # Comments toggle
+        comments_action = QAction("💬 Comments", rv_main_window)
+        comments_action.setCheckable(True)
+        comments_action.setChecked(comments_dock.isVisible() if comments_dock else True)
+        comments_action.triggered.connect(lambda checked: toggle_dock_visibility('comments', checked))
+        horus_menu.addAction(comments_action)
+
+        # Media Grid toggle (hidden by default)
+        media_grid_action = QAction("🖼️ Media Grid", rv_main_window)
+        media_grid_action.setCheckable(True)
+        media_grid_action.setChecked(media_grid_dock.isVisible() if media_grid_dock else False)
+        media_grid_action.triggered.connect(lambda checked: toggle_dock_visibility('media_grid', checked))
+        horus_menu.addAction(media_grid_action)
+
+        horus_menu.addSeparator()
+
+        # --- Actions Section ---
+        horus_menu.addSection("Actions")
+
+        # Reset Layout action
+        reset_layout_action = QAction("🔄 Reset Layout", rv_main_window)
+        reset_layout_action.triggered.connect(reset_dock_layout)
+        horus_menu.addAction(reset_layout_action)
+
+        # Insert Horus menu before Help menu
+        if help_action:
+            menubar.insertMenu(help_action, horus_menu)
+        else:
+            menubar.addMenu(horus_menu)
+
+        # Store menu actions for updating checkmarks
+        globals()['horus_menu'] = horus_menu
+        globals()['horus_menu_actions'] = {
+            'navigator': navigator_action,
+            'playlist': playlist_action,
+            'comments': comments_action,
+            'media_grid': media_grid_action
+        }
+
+        print("✅ Horus menu added to RV menu bar")
+
+    except Exception as e:
+        print(f"⚠️ Could not create Horus menu: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def toggle_dock_visibility(dock_name, visible):
+    """Toggle dock visibility and save state."""
+    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
+
+    dock_map = {
+        'navigator': search_dock,
+        'playlist': timeline_playlist_dock,
+        'comments': comments_dock,
+        'media_grid': media_grid_dock
+    }
+
+    dock = dock_map.get(dock_name)
+    if dock:
+        dock.setVisible(visible)
+        save_ui_state()
+        print(f"{'✅ Showing' if visible else '❌ Hiding'} {dock_name} panel")
+
+
+def reset_dock_layout():
+    """Reset dock layout to default positions."""
+    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
+
+    try:
+        from PySide2.QtWidgets import QApplication, QMainWindow
+        from PySide2.QtCore import Qt
+
+        app = QApplication.instance()
+        if not app:
+            return
+
+        rv_main_window = None
+        for widget in app.topLevelWidgets():
+            if isinstance(widget, QMainWindow):
+                rv_main_window = widget
+                break
+
+        if not rv_main_window:
+            return
+
+        # Reset to default layout
+        if search_dock:
+            rv_main_window.addDockWidget(Qt.LeftDockWidgetArea, search_dock)
+            search_dock.show()
+
+        if timeline_playlist_dock:
+            rv_main_window.addDockWidget(Qt.LeftDockWidgetArea, timeline_playlist_dock)
+            rv_main_window.tabifyDockWidget(search_dock, timeline_playlist_dock)
+            timeline_playlist_dock.show()
+            search_dock.raise_()
+
+        if comments_dock:
+            rv_main_window.addDockWidget(Qt.RightDockWidgetArea, comments_dock)
+            comments_dock.show()
+
+        if media_grid_dock:
+            rv_main_window.addDockWidget(Qt.RightDockWidgetArea, media_grid_dock)
+            media_grid_dock.hide()
+
+        # Update menu checkmarks
+        update_menu_checkmarks()
+
+        # Save the reset state
+        save_ui_state()
+
+        print("✅ Dock layout reset to defaults")
+
+    except Exception as e:
+        print(f"⚠️ Could not reset dock layout: {e}")
+
+
+def update_menu_checkmarks():
+    """Update menu checkmarks to match dock visibility."""
+    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
+
+    try:
+        menu_actions = globals().get('horus_menu_actions', {})
+
+        if 'navigator' in menu_actions and search_dock:
+            menu_actions['navigator'].setChecked(search_dock.isVisible())
+        if 'playlist' in menu_actions and timeline_playlist_dock:
+            menu_actions['playlist'].setChecked(timeline_playlist_dock.isVisible())
+        if 'comments' in menu_actions and comments_dock:
+            menu_actions['comments'].setChecked(comments_dock.isVisible())
+        if 'media_grid' in menu_actions and media_grid_dock:
+            menu_actions['media_grid'].setChecked(media_grid_dock.isVisible())
+
+    except Exception as e:
+        print(f"⚠️ Could not update menu checkmarks: {e}")
+
+
+# ============================================================================
 # Horus Data Connector - Inline Implementation
 # ============================================================================
 
@@ -5359,7 +5678,7 @@ def create_modular_media_browser():
             globals()['playlist_dock'] = playlist_dock
             globals()['timeline_playlist_dock'] = playlist_dock  # For backward compatibility
 
-        # Show core panels
+        # Show core panels (defaults, may be overridden by restore_ui_state)
         search_dock.show()
         comments_dock.show()
         if playlist_dock:
@@ -5370,9 +5689,22 @@ def create_modular_media_browser():
         print("   LEFT: Navigator + Playlist (Tabbed, width reduced by 50%)")
         print("   CENTER: RV Viewer")
         print("   RIGHT: Comments & Annotations")
-        
+
         # Setup Horus integration
         setup_horus_integration()
+
+        # Setup Horus menu in RV menu bar
+        setup_horus_menu()
+
+        # Restore saved UI state (dock positions, sizes, visibility)
+        restore_ui_state()
+
+        # Connect dock visibility changes to auto-save
+        search_dock.visibilityChanged.connect(lambda: save_ui_state())
+        comments_dock.visibilityChanged.connect(lambda: save_ui_state())
+        media_grid_dock.visibilityChanged.connect(lambda: save_ui_state())
+        if playlist_dock:
+            playlist_dock.visibilityChanged.connect(lambda: save_ui_state())
 
         print("SUCCESS: Modular MediaBrowser with Horus integration created!")
         return True
