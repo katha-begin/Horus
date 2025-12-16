@@ -130,6 +130,9 @@ horus_fs = None
 # Horus Comment Manager
 horus_comments = None
 
+# Horus Playlist Manager
+horus_playlists = None
+
 # Current media context for comments
 current_media_context = {
     "episode": None,
@@ -146,7 +149,7 @@ ENABLE_TIMELINE_PLAYLIST = True   # Enable/disable Timeline Playlist feature
 ENABLE_LEGACY_TIMELINE = False    # Disable legacy Timeline Sequence panel
 USE_FILE_SYSTEM_BACKEND = True    # Use new file system backend instead of sample_db
 
-# Timeline Playlist global data
+# Timeline Playlist global data (now managed by horus_playlists backend)
 timeline_playlist_data = []
 current_playlist_id = None
 
@@ -1155,48 +1158,30 @@ def create_timeline_tracks_panel():
     return panel
 
 def load_timeline_playlist_data():
-    """Load playlist data from JSON database."""
-    global timeline_playlist_data, horus_fs
+    """Load playlist data using HorusPlaylistManager backend."""
+    global timeline_playlist_data, horus_fs, horus_playlists
 
     try:
-        import json
-        import os
+        # Initialize playlist manager if needed
+        if horus_playlists is None:
+            from horus_playlists import get_playlist_manager
+            horus_playlists = get_playlist_manager()
 
-        # Try file system backend first
-        if USE_FILE_SYSTEM_BACKEND and horus_fs and horus_fs.access_mode != "none":
-            playlists = horus_fs.load_playlists()
-            if playlists:
-                timeline_playlist_data = playlists
-                print(f"✅ Loaded {len(timeline_playlist_data)} playlists from file system backend")
-                for playlist in timeline_playlist_data:
-                    clip_count = len(playlist.get('clips', []))
-                    print(f"   - {playlist.get('name', 'Unnamed')} ({clip_count} clips)")
-                return
+        # Set file system if available
+        if horus_fs and horus_playlists.fs is None:
+            horus_playlists.set_file_system(horus_fs)
 
-        # Load playlists using resource path for bundled executable
-        playlist_file = os.path.join(get_resource_path("sample_db"), "horus_playlists.json")
-        print(f"Looking for playlist file at: {playlist_file}")
+        # Load playlists from backend
+        timeline_playlist_data = horus_playlists.load_playlists()
 
-        if os.path.exists(playlist_file):
-            with open(playlist_file, 'r', encoding='utf-8') as f:
-                timeline_playlist_data = json.load(f)
-                print(f"✅ Loaded {len(timeline_playlist_data)} playlists from bundled resources")
-
-                # Print playlist names for verification
-                for playlist in timeline_playlist_data:
-                    clip_count = len(playlist.get('clips', []))
-                    metadata_count = playlist.get('metadata', {}).get('clip_count', 0)
-                    print(f"   - {playlist.get('name', 'Unnamed')} ({clip_count} clips, metadata: {metadata_count})")
+        if timeline_playlist_data:
+            print(f"✅ Loaded {len(timeline_playlist_data)} playlists from backend")
+            for playlist in timeline_playlist_data:
+                clip_count = len(playlist.get('clips', []))
+                print(f"   - {playlist.get('name', 'Unnamed')} ({clip_count} clips)")
         else:
-            # Fallback to local file for development
-            local_playlist_file = os.path.join("sample_db", "horus_playlists.json")
-            if os.path.exists(local_playlist_file):
-                with open(local_playlist_file, 'r', encoding='utf-8') as f:
-                    timeline_playlist_data = json.load(f)
-                    print(f"✅ Loaded {len(timeline_playlist_data)} playlists from local file")
-            else:
-                timeline_playlist_data = []
-                print("⚠️  No playlist file found, starting with empty playlists")
+            timeline_playlist_data = []
+            print("📋 No playlists found, starting fresh")
 
     except Exception as e:
         print(f"❌ Error loading playlist data: {e}")
@@ -1205,36 +1190,24 @@ def load_timeline_playlist_data():
         timeline_playlist_data = []
 
 def save_timeline_playlist_data():
-    """Save playlist data to JSON database."""
-    global horus_fs
+    """Save playlist data using HorusPlaylistManager backend."""
+    global horus_playlists
 
     try:
-        import json
-        import os
+        if horus_playlists is None:
+            from horus_playlists import get_playlist_manager
+            horus_playlists = get_playlist_manager()
 
-        # Try file system backend first
-        if USE_FILE_SYSTEM_BACKEND and horus_fs and horus_fs.access_mode != "none":
-            if horus_fs.save_playlists(timeline_playlist_data):
-                print("✅ Playlist data saved to file system backend")
-                return
-            else:
-                print("⚠️ Failed to save to file system backend, falling back to local")
-
-        # Try to save to bundled resource path first, fallback to local
-        try:
-            playlist_file = os.path.join(get_resource_path("sample_db"), "horus_playlists.json")
-            with open(playlist_file, 'w', encoding='utf-8') as f:
-                json.dump(timeline_playlist_data, f, indent=2)
-            print("✅ Playlist data saved to bundled resources")
-        except (OSError, PermissionError):
-            # Fallback to local file (bundled resources are read-only)
-            local_playlist_file = os.path.join("sample_db", "horus_playlists.json")
-            with open(local_playlist_file, 'w', encoding='utf-8') as f:
-                json.dump(timeline_playlist_data, f, indent=2)
-            print("✅ Playlist data saved to local file")
+        # The cache is already updated in horus_playlists, just save
+        if horus_playlists.save_playlists():
+            print("✅ Playlist data saved to backend")
+        else:
+            print("❌ Failed to save playlist data")
 
     except Exception as e:
         print(f"❌ Error saving playlist data: {e}")
+        import traceback
+        traceback.print_exc()
 
 def populate_playlist_tree():
     """Populate the playlist tree with data."""
@@ -1651,71 +1624,43 @@ def on_timeline_clip_clicked(clip_data):
 
 # Playlist management functions
 def create_new_playlist():
-    """Create a new playlist."""
+    """Create a new playlist using backend."""
+    global horus_playlists, timeline_playlist_data
+
     try:
         from PySide2.QtWidgets import QInputDialog
-        from datetime import datetime
 
         name, ok = QInputDialog.getText(None, "New Playlist", "Enter playlist name:")
         if ok and name:
-            # Generate new playlist ID
-            playlist_id = f"playlist_{len(timeline_playlist_data) + 1:03d}"
+            # Initialize playlist manager if needed
+            if horus_playlists is None:
+                from horus_playlists import get_playlist_manager
+                horus_playlists = get_playlist_manager()
 
-            # Create new playlist data
-            new_playlist = {
-                "_id": playlist_id,
-                "name": name,
-                "project_id": "proj_001",  # Default project
-                "created_by": "user",
-                "created_at": datetime.now().isoformat() + "Z",
-                "updated_at": datetime.now().isoformat() + "Z",
-                "description": f"User created playlist: {name}",
-                "type": "user_created",
-                "status": "draft",
-                "settings": {
-                    "auto_play": True,
-                    "loop": False,
-                    "show_timecode": True,
-                    "default_track_height": 60,
-                    "timeline_zoom": 1.0,
-                    "color_coding_enabled": True
-                },
-                "clips": [],
-                "tracks": [
-                    {
-                        "track_id": 1,
-                        "name": "Video Track 1",
-                        "type": "video",
-                        "height": 60,
-                        "locked": False,
-                        "muted": False,
-                        "solo": False,
-                        "color": "#2d2d2d"
-                    }
-                ],
-                "metadata": {
-                    "total_duration": 0,
-                    "clip_count": 0,
-                    "departments": [],
-                    "sequences": [],
-                    "last_played_position": 0,
-                    "playback_settings": {
-                        "frame_rate": 24,
-                        "resolution": "1920x1080",
-                        "color_space": "Rec709"
-                    }
-                }
-            }
+            # Get current user
+            import os
+            user = os.environ.get("USER", os.environ.get("USERNAME", "unknown"))
 
-            # Add to data and save
-            timeline_playlist_data.append(new_playlist)
-            save_timeline_playlist_data()
-            populate_playlist_tree()
+            # Create playlist via backend
+            playlist_id = horus_playlists.create_playlist(
+                name=name,
+                created_by=user,
+                description=f"User created playlist: {name}",
+                playlist_type="user_created"
+            )
 
-            print(f"Created new playlist: {name}")
+            if playlist_id:
+                # Reload data to sync
+                timeline_playlist_data = horus_playlists.load_playlists()
+                populate_playlist_tree()
+                print(f"✅ Created new playlist: {name}")
+            else:
+                print(f"❌ Failed to create playlist: {name}")
 
     except Exception as e:
         print(f"Error creating new playlist: {e}")
+        import traceback
+        traceback.print_exc()
 
 def duplicate_current_playlist():
     """Duplicate the selected playlist."""
@@ -1768,66 +1713,72 @@ def duplicate_current_playlist():
         print(f"Error duplicating playlist: {e}")
 
 def rename_current_playlist():
-    """Rename the selected playlist."""
+    """Rename the selected playlist using backend."""
+    global horus_playlists, timeline_playlist_data
+
     try:
         if not current_playlist_id:
             from PySide2.QtWidgets import QMessageBox
             QMessageBox.warning(None, "Warning", "Please select a playlist to rename.")
             return
 
-        # Find current playlist
-        current_playlist = None
-        for playlist in timeline_playlist_data:
-            if playlist["_id"] == current_playlist_id:
-                current_playlist = playlist
-                break
+        # Initialize playlist manager if needed
+        if horus_playlists is None:
+            from horus_playlists import get_playlist_manager
+            horus_playlists = get_playlist_manager()
 
-        if not current_playlist:
+        # Get current playlist
+        playlist = horus_playlists.get_playlist(current_playlist_id)
+        if not playlist:
             return
 
         # Get new name
         from PySide2.QtWidgets import QInputDialog
-        from datetime import datetime
 
         name, ok = QInputDialog.getText(
             None, "Rename Playlist",
             "Enter new name:",
-            text=current_playlist["name"]
+            text=playlist["name"]
         )
 
         if ok and name:
-            current_playlist["name"] = name
-            current_playlist["updated_at"] = datetime.now().isoformat() + "Z"
+            if horus_playlists.update_playlist(current_playlist_id, {"name": name}):
+                # Reload data to sync
+                timeline_playlist_data = horus_playlists.load_playlists()
+                populate_playlist_tree()
 
-            save_timeline_playlist_data()
-            populate_playlist_tree()
+                # Update current playlist label
+                if timeline_playlist_dock and timeline_playlist_dock.widget():
+                    widget = timeline_playlist_dock.widget()
+                    widget.right_panel.current_playlist_label.setText(f"Playlist: {name}")
 
-            # Update current playlist label
-            if timeline_playlist_dock and timeline_playlist_dock.widget():
-                widget = timeline_playlist_dock.widget()
-                widget.right_panel.current_playlist_label.setText(f"Playlist: {name}")
-
-            print(f"Renamed playlist to: {name}")
+                print(f"✅ Renamed playlist to: {name}")
+            else:
+                print(f"❌ Failed to rename playlist")
 
     except Exception as e:
         print(f"Error renaming playlist: {e}")
+        import traceback
+        traceback.print_exc()
 
 def delete_current_playlist():
-    """Delete the selected playlist."""
+    """Delete the selected playlist using backend."""
+    global horus_playlists, timeline_playlist_data
+
     try:
         if not current_playlist_id:
             from PySide2.QtWidgets import QMessageBox
             QMessageBox.warning(None, "Warning", "Please select a playlist to delete.")
             return
 
-        # Find current playlist
-        current_playlist = None
-        for i, playlist in enumerate(timeline_playlist_data):
-            if playlist["_id"] == current_playlist_id:
-                current_playlist = playlist
-                break
+        # Initialize playlist manager if needed
+        if horus_playlists is None:
+            from horus_playlists import get_playlist_manager
+            horus_playlists = get_playlist_manager()
 
-        if not current_playlist:
+        # Get playlist name for confirmation
+        playlist = horus_playlists.get_playlist(current_playlist_id)
+        if not playlist:
             return
 
         # Confirm deletion
@@ -1835,21 +1786,25 @@ def delete_current_playlist():
 
         reply = QMessageBox.question(
             None, "Delete Playlist",
-            f"Are you sure you want to delete playlist '{current_playlist['name']}'?",
+            f"Are you sure you want to delete playlist '{playlist['name']}'?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
 
         if reply == QMessageBox.Yes:
-            timeline_playlist_data.remove(current_playlist)
-            save_timeline_playlist_data()
-            populate_playlist_tree()
-            clear_timeline_display()
-
-            print(f"Deleted playlist: {current_playlist['name']}")
+            if horus_playlists.delete_playlist(current_playlist_id):
+                # Reload data to sync
+                timeline_playlist_data = horus_playlists.load_playlists()
+                populate_playlist_tree()
+                clear_timeline_display()
+                print(f"✅ Deleted playlist: {playlist['name']}")
+            else:
+                print(f"❌ Failed to delete playlist")
 
     except Exception as e:
         print(f"Error deleting playlist: {e}")
+        import traceback
+        traceback.print_exc()
 
 def show_add_media_dialog():
     """Show dialog to add media to current playlist."""
@@ -1905,114 +1860,88 @@ def on_timeline_zoom_changed(zoom_text):
         print(f"Error changing zoom: {e}")
 
 def add_media_to_current_playlist(media_record):
-    """Add a media record to the current playlist."""
+    """Add a media record to the current playlist using backend."""
+    global horus_playlists, timeline_playlist_data
+
     try:
         if not current_playlist_id:
             from PySide2.QtWidgets import QMessageBox
             QMessageBox.warning(None, "Warning", "Please select a playlist first.")
             return
 
-        # Find current playlist
-        current_playlist = None
-        for playlist in timeline_playlist_data:
-            if playlist["_id"] == current_playlist_id:
-                current_playlist = playlist
-                break
+        # Initialize playlist manager if needed
+        if horus_playlists is None:
+            from horus_playlists import get_playlist_manager
+            horus_playlists = get_playlist_manager()
 
-        if not current_playlist:
-            return
-
-        # Create new clip
-        from datetime import datetime
-
-        clips = current_playlist.get("clips", [])
-
-        # Calculate position (add to end)
-        position = 0
-        if clips:
-            last_clip = max(clips, key=lambda x: x.get("position", 0) + x.get("duration", 0))
-            position = last_clip.get("position", 0) + last_clip.get("duration", 0)
-
-        # Extract department from filename or task
-        department = "unknown"
+        # Extract department from filename
         filename = media_record.get("file_name", "")
-        department_colors = {
-            "animation": "#1f4e79",
-            "lighting": "#d68910",
-            "compositing": "#196f3d",
-            "fx": "#6c3483",
-            "modeling": "#a93226",
-            "texturing": "#8b4513",
-            "rigging": "#2e8b57",
-            "layout": "#4682b4"
-        }
-
-        # Try to extract from filename
-        for dept in department_colors.keys():
+        department = "unknown"
+        for dept in ["animation", "lighting", "compositing", "fx", "modeling", "texturing", "rigging", "layout"]:
             if dept in filename.lower():
                 department = dept
                 break
 
-        # Create clip data
-        new_clip = {
-            "clip_id": f"clip_{len(clips) + 1:03d}",
-            "media_id": media_record["_id"],
-            "position": position,
-            "duration": media_record.get("metadata", {}).get("duration", 120),
-            "in_point": 0,
-            "out_point": media_record.get("metadata", {}).get("duration", 120),
-            "track": 1,
+        # Prepare media data for backend
+        media_data = {
+            "episode": media_record.get("episode", extract_episode_from_filename(filename)),
+            "sequence": media_record.get("sequence", extract_sequence_from_filename(filename)),
+            "shot": media_record.get("shot", extract_shot_from_filename(filename)),
             "department": department,
-            "sequence": extract_sequence_from_filename(filename),
-            "shot": extract_shot_from_filename(filename),
             "version": media_record.get("version", "v001"),
-            "color": department_colors.get(department, "#666666"),
-            "notes": media_record.get("description", ""),
-            "added_at": datetime.now().isoformat() + "Z",
-            "file_path": media_record.get("file_path", "")
+            "file_path": media_record.get("file_path", ""),
+            "file_name": filename,
+            "frame_range": [
+                media_record.get("metadata", {}).get("start_frame", 1001),
+                media_record.get("metadata", {}).get("end_frame", 1100)
+            ]
         }
 
-        # Add clip to playlist
-        clips.append(new_clip)
-        current_playlist["clips"] = clips
-        current_playlist["updated_at"] = datetime.now().isoformat() + "Z"
+        # Add clip via backend
+        clip_id = horus_playlists.add_clip(current_playlist_id, media_data)
 
-        # Update metadata
-        metadata = current_playlist.get("metadata", {})
-        metadata["clip_count"] = len(clips)
-        metadata["total_duration"] = sum(clip.get("duration", 0) for clip in clips)
+        if clip_id:
+            # Reload data to sync
+            timeline_playlist_data = horus_playlists.load_playlists()
 
-        # Update departments list
-        departments = set(clip.get("department") for clip in clips)
-        metadata["departments"] = list(departments)
+            # Reload timeline if this playlist is currently selected
+            playlist = horus_playlists.get_playlist(current_playlist_id)
+            if playlist:
+                load_playlist_timeline(playlist)
 
-        current_playlist["metadata"] = metadata
+            # Update tree to show new clip count
+            populate_playlist_tree()
 
-        # Save and refresh
-        save_timeline_playlist_data()
+            from PySide2.QtWidgets import QMessageBox
+            QMessageBox.information(
+                None, "Added to Playlist",
+                f"Added '{filename}' to playlist '{playlist.get('name', 'Unknown')}'"
+            )
 
-        # Reload timeline if this playlist is currently selected
-        if current_playlist_id == current_playlist["_id"]:
-            load_playlist_timeline(current_playlist)
-
-        # Update tree to show new clip count
-        populate_playlist_tree()
-
-        from PySide2.QtWidgets import QMessageBox
-        QMessageBox.information(
-            None, "Added to Playlist",
-            f"Added '{media_record.get('file_name', 'Unknown')}' to playlist '{current_playlist.get('name', 'Unknown')}'"
-        )
-
-        print(f"✅ Added media to playlist: {media_record.get('file_name')}")
-        print(f"   Playlist: {current_playlist.get('name')}")
-        print(f"   Department: {department}")
-        print(f"   Sequence/Shot: {extract_sequence_from_filename(filename)}/{extract_shot_from_filename(filename)}")
+            print(f"✅ Added media to playlist: {filename}")
+        else:
+            print(f"❌ Failed to add media to playlist")
 
     except Exception as e:
         print(f"❌ Error adding media to playlist: {e}")
         import traceback
         traceback.print_exc()
+
+
+def extract_episode_from_filename(filename):
+    """Extract episode from filename."""
+    import re
+    # Look for Ep01, ep01, episode01 patterns
+    match = re.search(r'(ep\d+|episode\d+)', filename.lower())
+    if match:
+        ep = match.group(1)
+        # Normalize to Ep## format
+        if ep.startswith('episode'):
+            ep = 'Ep' + ep[7:]
+        else:
+            ep = 'Ep' + ep[2:]
+        return ep
+    return "Ep01"
 
 def extract_sequence_from_filename(filename):
     """Extract sequence from filename."""

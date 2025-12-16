@@ -748,8 +748,11 @@ class HorusFileSystem:
     # ========================================================================
 
     def get_playlists_file_path(self) -> str:
-        """Get path to playlists JSON file."""
-        return f"{self.horus_data}/playlists.json"
+        """Get path to playlists JSON file.
+
+        Stored in all/scene/.horus/ which has write permissions.
+        """
+        return f"{self.project_root}/all/scene/.horus/playlists.json"
 
     def load_playlists(self) -> List[Dict]:
         """Load all playlists."""
