@@ -2197,45 +2197,45 @@ def create_search_panel():
         search_input.setMinimumWidth(60)
         layout.addWidget(search_input)
 
-        # Filter section - Order: Episode > Sequence > Department > Shot
+        # Filter section - Order: Department > Episode > Sequence > Shot > Status
         filter_frame = QFrame()
         filter_layout = QGridLayout(filter_frame)
         filter_layout.setContentsMargins(0, 2, 0, 2)
         filter_layout.setSpacing(2)
         filter_layout.setColumnStretch(1, 1)  # Combo column stretches
 
-        # Row 0: Episode filter
+        # Row 0: Department filter (first after project)
+        dept_label = QLabel("Dept:")
+        dept_label.setFixedWidth(35)
+        filter_layout.addWidget(dept_label, 0, 0)
+        department_filter = QComboBox()
+        department_filter.addItems(["All", "anim", "comp", "lighting", "layout", "hero", "fx"])
+        department_filter.setObjectName("department_filter")
+        department_filter.setMinimumWidth(50)
+        department_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        filter_layout.addWidget(department_filter, 0, 1)
+
+        # Row 1: Episode filter
         ep_label = QLabel("Ep:")
         ep_label.setFixedWidth(35)
-        filter_layout.addWidget(ep_label, 0, 0)
+        filter_layout.addWidget(ep_label, 1, 0)
         episode_filter = QComboBox()
         episode_filter.addItems(["All"])
         episode_filter.setObjectName("episode_filter")
         episode_filter.setMinimumWidth(50)
         episode_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        filter_layout.addWidget(episode_filter, 0, 1)
+        filter_layout.addWidget(episode_filter, 1, 1)
 
-        # Row 1: Sequence filter
+        # Row 2: Sequence filter
         seq_label = QLabel("Seq:")
         seq_label.setFixedWidth(35)
-        filter_layout.addWidget(seq_label, 1, 0)
+        filter_layout.addWidget(seq_label, 2, 0)
         sequence_filter = QComboBox()
         sequence_filter.addItems(["All"])
         sequence_filter.setObjectName("sequence_filter")
         sequence_filter.setMinimumWidth(50)
         sequence_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        filter_layout.addWidget(sequence_filter, 1, 1)
-
-        # Row 2: Department filter
-        dept_label = QLabel("Dept:")
-        dept_label.setFixedWidth(35)
-        filter_layout.addWidget(dept_label, 2, 0)
-        department_filter = QComboBox()
-        department_filter.addItems(["All", "anim", "comp", "lighting", "layout", "hero"])
-        department_filter.setObjectName("department_filter")
-        department_filter.setMinimumWidth(50)
-        department_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        filter_layout.addWidget(department_filter, 2, 1)
+        filter_layout.addWidget(sequence_filter, 2, 1)
 
         # Row 3: Shot filter
         shot_label = QLabel("Shot:")
@@ -2274,10 +2274,10 @@ def create_search_panel():
         # Media table header
         layout.addWidget(QLabel("Media Files:"))
 
-        # Media table - Columns: Name ({ep}_{shot}), Version, Status
+        # Media table - Columns: Name ({ep}_{shot}), Department, Version, Status
         media_table = QTableWidget()
-        media_table.setColumnCount(3)
-        media_table.setHorizontalHeaderLabels(["Name", "Version", "Status"])
+        media_table.setColumnCount(4)
+        media_table.setHorizontalHeaderLabels(["Name", "Dept", "Version", "Status"])
         media_table.setObjectName("media_table")
         media_table.setSelectionBehavior(QTableWidget.SelectRows)
         media_table.setAlternatingRowColors(True)
@@ -2288,8 +2288,9 @@ def create_search_panel():
         header = media_table.horizontalHeader()
         header.setStretchLastSection(True)
         header.setSectionResizeMode(0, QHeaderView.Stretch)  # Name - stretch
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Version
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Status
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Dept
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Version
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Status
 
         # Set row height
         media_table.verticalHeader().setDefaultSectionSize(25)
@@ -3075,16 +3076,21 @@ def update_media_table_fs(media_items):
             name_item.setData(Qt.UserRole, item)  # Store full item data
             media_table.setItem(row, 0, name_item)
 
+            # Department column
+            dept = item.get('department', '')
+            dept_item = QTableWidgetItem(dept)
+            media_table.setItem(row, 1, dept_item)
+
             # Version column
             version = item.get('version', 'v001')
             version_item = QTableWidgetItem(version)
-            media_table.setItem(row, 1, version_item)
+            media_table.setItem(row, 2, version_item)
 
             # Status column with color
             status = item.get('status', 'submit')
             status_icon = "🟢" if status == "approved" else "🔴" if status == "need fix" else "🟡"
             status_item = QTableWidgetItem(f"{status_icon} {status}")
-            media_table.setItem(row, 2, status_item)
+            media_table.setItem(row, 3, status_item)
 
         print(f"📊 Updated table with {len(media_items)} items")
 

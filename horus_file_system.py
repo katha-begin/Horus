@@ -452,17 +452,16 @@ class HorusFileSystem:
         if not self.provider:
             return []
 
-        # Build search path pattern
-        if episode and sequence and shot and department:
-            search_path = f"{self.scene_base}/{episode}/{sequence}/{shot}/{department}/output"
-        elif episode and sequence and shot:
-            search_path = f"{self.scene_base}/{episode}/{sequence}/{shot}/*/output"
-        elif episode and sequence:
-            search_path = f"{self.scene_base}/{episode}/{sequence}/*/*/output"
-        elif episode:
-            search_path = f"{self.scene_base}/{episode}/*/*/*/output"
-        else:
+        # Build search path pattern - handle department filter at any level
+        ep_part = episode if episode else "*"
+        seq_part = sequence if sequence else "*"
+        shot_part = shot if shot else "*"
+        dept_part = department if department else "*"
+
+        if not episode:
             return []
+
+        search_path = f"{self.scene_base}/{ep_part}/{seq_part}/{shot_part}/{dept_part}/output"
 
         # Use find command for SSH (much faster than multiple ls calls)
         if self.access_mode == "ssh":
