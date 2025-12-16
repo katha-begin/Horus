@@ -1,9 +1,9 @@
 # Horus Implementation Plan V2
 ## Based on Real Server Directory Structure
 
-**Date:** 2025-12-15  
-**Status:** Planning Phase  
-**Server:** ec2-user@10.100.128.193  
+**Date:** 2025-12-16
+**Status:** Implementation Phase
+**Server:** ec2-user@10.100.128.193
 
 ---
 
@@ -12,8 +12,14 @@
 ### **Data Source: File System (Not Database)**
 - ✅ **Direct file system scanning** of network mount points
 - ✅ **JSON metadata files** for shot information (already exists!)
-- ✅ **Separate JSON files** for comments and playlists (to be created)
+- ✅ **Separate JSON files** for comments (IMPLEMENTED!)
+- ✅ **Playlists** (to be created)
 - ❌ **No database** for POC phase
+
+### **Implementation Status:**
+- ✅ `horus_file_system.py` - File system backend (SSH/Local)
+- ✅ `horus_comments.py` - Comment backend with threaded replies
+- ✅ `rv_horus_integration.py` - UI integration with comment loading/saving
 
 ### **Mount Points:**
 ```python
@@ -69,58 +75,72 @@ IMAGE_ROOT = "/mnt/igloo_swa_w/"    # Image sequences (.exr)
 
 ---
 
-### **2. Comments Storage (New - JSON)**
-**Location:** `/mnt/igloo_swa_v/SWA/.horus/comments/{Episode}.json`
+### **2. Comments Storage (Per-Shot JSON)**
+**Location:** `{PROJECT_ROOT}/SWA/all/scene/{Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json`
 
-**Example:** `/mnt/igloo_swa_v/SWA/.horus/comments/Ep02.json`
+**Example:** `/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/.horus/SH0010_comments.json`
 
-**Why Single File Per Episode:**
-- ✅ Better performance (one file read instead of hundreds)
-- ✅ Centralized on server (no local storage issues)
-- ✅ Easier backup and version control
-- ✅ Faster filtering (all episode comments in one place)
+**Why Per-Shot Storage:**
+- ✅ Comments stored with shot data (logical grouping)
+- ✅ Easy to find comments for specific shot
+- ✅ No need to load entire episode data
+- ✅ Better for concurrent access (multiple users reviewing different shots)
 
 **Structure:**
 ```json
 {
-  "episode": "Ep02",
-  "shots": [
+  "version": "1.0",
+  "shot_info": {
+    "episode": "Ep02",
+    "sequence": "sq0010",
+    "shot": "SH0010"
+  },
+  "comments": [
     {
-      "sequence": "sq0010",
-      "shot": "SH0010",
+      "id": "uuid-comment-001",
+      "parent_id": null,
+      "media_file": "SH0010_comp_v007.mov",
       "department": "comp",
-      "version": "v007",
-      "media_file": "/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/comp/output/Ep02_sq0010_SH0010_v007.mov",
-      "annotation_file": "/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/comp/annotations/Ep02_sq0010_SH0010_comp_v007_annotations.json",
-      "shot_status": "submit",
-      "comments": [
+      "media_version": "v007",
+      "user": "director.smith",
+      "user_display": "Director Smith",
+      "avatar": "DS",
+      "text": "Great work! The lighting looks perfect.",
+      "frame": 1015,
+      "timestamp": "2025-12-15T10:30:00Z",
+      "updated_at": "2025-12-15T10:30:00Z",
+      "likes": 3,
+      "liked_by": ["artist.john", "supervisor.jane"],
+      "status": "open",
+      "priority": "high",
+      "annotation_id": null,
+      "replies": [
         {
-          "comment_id": "comment_001",
-          "author": "director.smith",
-          "text": "Great work! Approved.",
-          "frame_number": 1015,
-          "timestamp": "2025-12-15T10:30:00Z",
-          "priority": "high",
+          "id": "uuid-reply-001",
+          "parent_id": "uuid-comment-001",
+          "user": "artist.john",
+          "user_display": "Artist John",
+          "avatar": "AJ",
+          "text": "@director.smith Thanks! Will address the rim light notes.",
+          "timestamp": "2025-12-15T11:00:00Z",
+          "likes": 1,
+          "liked_by": ["director.smith"],
           "replies": [
             {
-              "reply_id": "reply_001",
-              "author": "artist.john",
-              "text": "Thanks! Will address the notes.",
-              "timestamp": "2025-12-15T11:00:00Z"
+              "id": "uuid-reply-002",
+              "parent_id": "uuid-reply-001",
+              "user": "supervisor.jane",
+              "user_display": "Supervisor Jane",
+              "avatar": "SJ",
+              "text": "Let me know if you need help with the color grading.",
+              "timestamp": "2025-12-15T11:30:00Z",
+              "likes": 0,
+              "liked_by": [],
+              "replies": []
             }
           ]
         }
       ]
-    },
-    {
-      "sequence": "sq0010",
-      "shot": "SH0020",
-      "department": "comp",
-      "version": "v004",
-      "media_file": "/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0020/comp/output/Ep02_sq0010_SH0020_v004.mov",
-      "annotation_file": "/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0020/comp/annotations/Ep02_sq0010_SH0020_comp_v004_annotations.json",
-      "shot_status": "approved",
-      "comments": []
     }
   ]
 }
@@ -133,7 +153,57 @@ IMAGE_ROOT = "/mnt/igloo_swa_w/"    # Image sequences (.exr)
 
 ---
 
-### **3. Playlists Storage (New - JSON)**
+### **3. Annotations Storage (Per-Version Images)**
+**Location:** `{PROJECT_ROOT}/SWA/all/scene/{Episode}/{Sequence}/{Shot}/{Department}/annotations/{Version}/{filename}.{frame}.png`
+
+**Example:** `/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/comp/annotations/v007/SH0010_comp_v007.0045.png`
+
+**Why This Location:**
+- ✅ Annotations stored alongside media files
+- ✅ Version-specific annotations (different versions have different notes)
+- ✅ Easy to archive/backup with shot data
+- ✅ Clear file naming convention matching media files
+
+**Annotation Metadata (stored in comments JSON):**
+```json
+{
+  "id": "uuid-annotation-001",
+  "comment_id": "uuid-comment-001",
+  "media_file": "SH0010_comp_v007.mov",
+  "frame": 45,
+  "type": "paint",
+  "image_path": "comp/annotations/v007/SH0010_comp_v007.0045.png",
+  "user": "director.smith",
+  "timestamp": "2025-12-15T10:30:00Z"
+}
+```
+
+**Directory Structure Example:**
+```
+{PROJECT_ROOT}/SWA/all/scene/Ep02/sq0010/SH0010/
+├── .horus/
+│   └── SH0010_comments.json          # Shot comments
+├── comp/
+│   ├── output/
+│   │   ├── SH0010_comp_v006.mov
+│   │   └── SH0010_comp_v007.mov
+│   └── annotations/                   # Annotation images
+│       ├── v006/
+│       │   └── SH0010_comp_v006.0030.png
+│       └── v007/
+│           ├── SH0010_comp_v007.0045.png
+│           └── SH0010_comp_v007.0078.png
+├── lighting/
+│   ├── output/
+│   │   └── SH0010_lighting_v003.mov
+│   └── annotations/
+│       └── v003/
+│           └── SH0010_lighting_v003.0012.png
+```
+
+---
+
+### **4. Playlists Storage (New - JSON)**
 **Location:** `/mnt/igloo_swa_v/SWA/.horus/playlists/{playlist_name}.json`
 
 **Example:** `/mnt/igloo_swa_v/SWA/.horus/playlists/daily_review_2025-12-15.json`
@@ -159,8 +229,7 @@ IMAGE_ROOT = "/mnt/igloo_swa_w/"    # Image sequences (.exr)
       "shot": "SH0010",
       "department": "comp",
       "version": "v007",
-      "file_path": "/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/comp/output/Ep02_sq0010_SH0010_v007.mov",
-      "annotation_file": "/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/comp/annotations/Ep02_sq0010_SH0010_comp_v007_annotations.json",
+      "file_path": "/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0010/comp/output/SH0010_comp_v007.mov",
       "frame_range": [1001, 1043],
       "comment_count": 3,
       "shot_status": "submit"
@@ -172,8 +241,7 @@ IMAGE_ROOT = "/mnt/igloo_swa_w/"    # Image sequences (.exr)
       "shot": "SH0020",
       "department": "comp",
       "version": "v004",
-      "file_path": "/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0020/comp/output/Ep02_sq0010_SH0020_v004.mov",
-      "annotation_file": "/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0020/comp/annotations/Ep02_sq0010_SH0020_comp_v004_annotations.json",
+      "file_path": "/mnt/igloo_swa_v/SWA/all/scene/Ep02/sq0010/SH0020/comp/output/SH0010_comp_v004.mov",
       "frame_range": [1001, 1089],
       "comment_count": 1,
       "shot_status": "approved"
@@ -438,91 +506,176 @@ class PlaylistManager:
 
 ---
 
-### **Phase 3: Comments System (Week 3)**
+### **Phase 3: Comments & Annotations System (Week 3)**
 
-#### **Task 3.1: Create CommentManager Class**
+#### **Task 3.1: Create HorusCommentManager Class**
+**File:** `horus_comments.py`
+
 ```python
-class CommentManager:
-    """Manage comments and annotations."""
+class HorusCommentManager:
+    """Manage shot-level comments and annotations.
 
-    def __init__(self, comment_dir="~/.horus/projects/SWA/comments/"):
-        self.comment_dir = comment_dir
+    Comments are stored per-shot in:
+    {shot_path}/.horus/{shot}_comments.json
 
-    def add_comment(self, media_file, author, text, frame_number, priority="low"):
-        """Add new comment."""
+    Annotations are stored in:
+    {shot_path}/{department}/annotations/{version}/{filename}.{frame}.png
+    """
+
+    def __init__(self, file_system_provider):
+        """Initialize with file system provider (local or SSH)."""
+        self.fs = file_system_provider
+
+    # ============== Comment Path Methods ==============
+
+    def get_comment_file_path(self, episode, sequence, shot):
+        """Get path to shot's comment JSON file."""
+        # Returns: {root}/SWA/all/scene/{ep}/{seq}/{shot}/.horus/{shot}_comments.json
         pass
 
-    def add_reply(self, comment_id, author, text):
-        """Add reply to comment."""
+    def get_annotation_dir(self, episode, sequence, shot, department, version):
+        """Get path to annotation directory."""
+        # Returns: {root}/SWA/all/scene/{ep}/{seq}/{shot}/{dept}/annotations/{version}/
         pass
 
-    def get_comments_for_media(self, media_file):
-        """Get all comments for media file."""
+    def get_annotation_file_path(self, episode, sequence, shot, department, version, frame):
+        """Get path to specific annotation image."""
+        # Returns: {root}/.../annotations/{version}/{shot}_{dept}_{version}.{frame:04d}.png
         pass
 
-    def filter_comments(self, episode=None, sequence=None, shot=None,
-                       department=None, author=None, status=None):
-        """Filter comments by criteria."""
+    # ============== Comment CRUD Methods ==============
+
+    def load_comments(self, episode, sequence, shot):
+        """Load all comments for a shot."""
         pass
 
-    def sort_comments(self, comments, sort_by="timestamp", reverse=False):
-        """Sort comments."""
+    def save_comments(self, episode, sequence, shot, comments_data):
+        """Save comments for a shot."""
         pass
 
-    def update_comment_status(self, comment_id, status):
-        """Update comment status (open, resolved)."""
+    def add_comment(self, episode, sequence, shot, media_file, user, text,
+                   frame=None, priority="medium"):
+        """Add new comment to shot."""
+        pass
+
+    def add_reply(self, episode, sequence, shot, parent_id, user, text):
+        """Add reply to existing comment (supports nested replies)."""
+        pass
+
+    def delete_comment(self, episode, sequence, shot, comment_id):
+        """Delete comment (and all nested replies)."""
+        pass
+
+    def update_comment(self, episode, sequence, shot, comment_id,
+                      text=None, status=None, priority=None):
+        """Update comment properties."""
+        pass
+
+    def like_comment(self, episode, sequence, shot, comment_id, user):
+        """Toggle like on comment."""
+        pass
+
+    # ============== Annotation Methods ==============
+
+    def save_annotation_image(self, episode, sequence, shot, department,
+                             version, frame, image_data):
+        """Save annotation PNG image from RV Paint."""
+        pass
+
+    def get_annotation_image_path(self, episode, sequence, shot, department,
+                                  version, frame):
+        """Get path to annotation image if exists."""
+        pass
+
+    def list_annotations(self, episode, sequence, shot, department=None, version=None):
+        """List all annotations for shot/department/version."""
+        pass
+
+    def delete_annotation(self, episode, sequence, shot, department, version, frame):
+        """Delete annotation image."""
+        pass
+
+    # ============== Helper Methods ==============
+
+    def _generate_uuid(self):
+        """Generate unique ID for comment/reply."""
+        pass
+
+    def _get_user_avatar(self, username):
+        """Generate avatar initials from username."""
+        pass
+
+    def _find_comment_by_id(self, comments, comment_id):
+        """Recursively find comment/reply by ID in nested structure."""
         pass
 ```
 
-#### **Task 3.2: Update Comments Widget**
-- Implement reply functionality
-- Add filter dropdowns (episode, author, status)
-- Add sort dropdown (timestamp, frame, priority)
-- Add user mention autocomplete
-- Add status update buttons
+#### **Task 3.2: Integrate with Current Comments UI**
+**Do NOT redesign UI** - Only connect backend to existing widgets:
+
+1. **Load comments when media selected:**
+   - On `on_media_table_double_click()` → call `load_comments()`
+   - Populate `comments_container` with loaded comments
+
+2. **Add comment functionality:**
+   - Connect `add_comment_btn` → call `add_comment()`
+   - Connect `add_frame_comment_btn` → call `add_comment(frame=current_frame)`
+
+3. **Reply functionality:**
+   - Connect `post_reply_btn` → call `add_reply()`
+   - Show reply input when clicking "Reply" button
+
+4. **Like functionality:**
+   - Connect like button → call `like_comment()`
+   - Update like count in UI
 
 ---
 
-## 📊 **Filtering & Sorting Implementation**
+## 📊 **Comment Data Flow**
 
-### **Filter Comments by Episode:**
-```python
-def filter_comments_by_episode(episode_id="Ep02"):
-    """Get all comments for an episode."""
-    comment_dir = "~/.horus/projects/SWA/comments/"
-    all_comments = []
-
-    for file in os.listdir(comment_dir):
-        if file.startswith(episode_id):
-            with open(os.path.join(comment_dir, file)) as f:
-                data = json.load(f)
-                all_comments.extend(data["comments"])
-
-    return all_comments
+### **Loading Comments:**
+```
+User selects media → get shot info → load_comments(ep, seq, shot)
+                                          ↓
+                     Read {shot_path}/.horus/{shot}_comments.json
+                                          ↓
+                     Parse JSON → create comment widgets → display in UI
 ```
 
-### **Sort Comments:**
-```python
-def sort_comments(comments, sort_by="timestamp"):
-    """Sort comments by various criteria."""
-    sort_keys = {
-        "timestamp": lambda c: c["timestamp"],
-        "frame": lambda c: c["frame_number"],
-        "priority": lambda c: {"high": 3, "medium": 2, "low": 1}[c["priority"]],
-        "author": lambda c: c["author"]
-    }
-    return sorted(comments, key=sort_keys[sort_by])
+### **Adding Comment:**
+```
+User types comment → clicks "Comment" button
+                          ↓
+         add_comment(ep, seq, shot, media, user, text, frame)
+                          ↓
+         Load existing JSON → append new comment → save JSON
+                          ↓
+         Refresh UI with new comment
+```
+
+### **Adding Reply (with nesting):**
+```
+User clicks "Reply" → types reply → clicks "Post Reply"
+                          ↓
+         add_reply(ep, seq, shot, parent_id, user, text)
+                          ↓
+         Load JSON → find parent comment → append to replies[] → save JSON
+                          ↓
+         Refresh UI with new reply (nested under parent)
 ```
 
 ---
 
 ## 🚀 **Next Steps**
 
-1. ✅ **Review this plan** - Confirm approach with team
-2. ⏳ **Phase 1** - Implement FileSystemScanner and File Navigator
-3. ⏳ **Phase 2** - Implement PlaylistManager and Playlist Widget
-4. ⏳ **Phase 3** - Implement CommentManager and Comments Widget
-5. ⏳ **Testing** - Test with real server data
-6. ⏳ **Deployment** - Deploy to production
+1. ✅ **Phase 1** - FileSystemScanner implemented (`horus_file_system.py`)
+2. ⏳ **Phase 2** - PlaylistManager (pending)
+3. 🔄 **Phase 3** - CommentManager (implementing now)
+   - [ ] Create `horus_comments.py` module
+   - [ ] Implement `HorusCommentManager` class
+   - [ ] Integrate with current UI (no UI changes)
+   - [ ] Test with SSH and local modes
+4. ⏳ **Testing** - Test with real server data
+5. ⏳ **Deployment** - Deploy to production
 
 
