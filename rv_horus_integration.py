@@ -2176,100 +2176,89 @@ def create_search_panel():
         header.setStyleSheet("font-weight: bold; font-size: 12px; color: #0078d7;")
         layout.addWidget(header)
 
-        # Horus project selection row
-        project_row = QHBoxLayout()
-        project_row.setSpacing(2)
-        project_selector = QComboBox()
-        project_selector.setObjectName("project_selector")
-        project_selector.setMinimumWidth(60)
-        project_selector.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        project_row.addWidget(project_selector, 1)
-        refresh_btn = QPushButton("↻")  # Compact refresh icon
-        refresh_btn.setObjectName("refresh_horus_btn")
-        refresh_btn.setFixedWidth(24)
-        refresh_btn.setToolTip("Refresh")
-        project_row.addWidget(refresh_btn)
-        layout.addLayout(project_row)
-
-        # Search input
-        search_input = QLineEdit()
-        search_input.setPlaceholderText("Search...")
-        search_input.setMinimumWidth(60)
-        layout.addWidget(search_input)
-
-        # Filter section - Order: Department > Episode > Sequence > Shot > Status
+        # Filter layout - 3 rows with multiple columns
         filter_frame = QFrame()
         filter_layout = QGridLayout(filter_frame)
         filter_layout.setContentsMargins(0, 2, 0, 2)
-        filter_layout.setSpacing(2)
-        filter_layout.setColumnStretch(1, 1)  # Combo column stretches
+        filter_layout.setSpacing(4)
+        # Set column stretches for even distribution
+        filter_layout.setColumnStretch(1, 1)
+        filter_layout.setColumnStretch(3, 1)
+        filter_layout.setColumnStretch(5, 1)
 
-        # Row 0: Department filter (first after project)
+        # Row 0: Project | Department | Status
+        proj_label = QLabel("Proj:")
+        proj_label.setFixedWidth(30)
+        filter_layout.addWidget(proj_label, 0, 0)
+        project_selector = QComboBox()
+        project_selector.setObjectName("project_selector")
+        project_selector.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        filter_layout.addWidget(project_selector, 0, 1)
+
         dept_label = QLabel("Dept:")
-        dept_label.setFixedWidth(35)
-        filter_layout.addWidget(dept_label, 0, 0)
+        dept_label.setFixedWidth(30)
+        filter_layout.addWidget(dept_label, 0, 2)
         department_filter = QComboBox()
         department_filter.addItems(["All", "anim", "comp", "lighting", "layout", "hero", "fx"])
         department_filter.setObjectName("department_filter")
-        department_filter.setMinimumWidth(50)
         department_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        filter_layout.addWidget(department_filter, 0, 1)
+        filter_layout.addWidget(department_filter, 0, 3)
 
-        # Row 1: Episode filter
+        stat_label = QLabel("Stat:")
+        stat_label.setFixedWidth(30)
+        filter_layout.addWidget(stat_label, 0, 4)
+        status_filter = QComboBox()
+        status_filter.addItems(["All", "submit", "need fix", "approved"])
+        status_filter.setObjectName("status_filter")
+        status_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        filter_layout.addWidget(status_filter, 0, 5)
+
+        # Row 1: Episode | Sequence | Shot
         ep_label = QLabel("Ep:")
-        ep_label.setFixedWidth(35)
+        ep_label.setFixedWidth(30)
         filter_layout.addWidget(ep_label, 1, 0)
         episode_filter = QComboBox()
         episode_filter.addItems(["All"])
         episode_filter.setObjectName("episode_filter")
-        episode_filter.setMinimumWidth(50)
         episode_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         filter_layout.addWidget(episode_filter, 1, 1)
 
-        # Row 2: Sequence filter
         seq_label = QLabel("Seq:")
-        seq_label.setFixedWidth(35)
-        filter_layout.addWidget(seq_label, 2, 0)
+        seq_label.setFixedWidth(30)
+        filter_layout.addWidget(seq_label, 1, 2)
         sequence_filter = QComboBox()
         sequence_filter.addItems(["All"])
         sequence_filter.setObjectName("sequence_filter")
-        sequence_filter.setMinimumWidth(50)
         sequence_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        filter_layout.addWidget(sequence_filter, 2, 1)
+        filter_layout.addWidget(sequence_filter, 1, 3)
 
-        # Row 3: Shot filter
         shot_label = QLabel("Shot:")
-        shot_label.setFixedWidth(35)
-        filter_layout.addWidget(shot_label, 3, 0)
+        shot_label.setFixedWidth(30)
+        filter_layout.addWidget(shot_label, 1, 4)
         shot_filter = QComboBox()
         shot_filter.addItems(["All"])
         shot_filter.setObjectName("shot_filter")
-        shot_filter.setMinimumWidth(50)
         shot_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        filter_layout.addWidget(shot_filter, 3, 1)
+        filter_layout.addWidget(shot_filter, 1, 5)
 
-        # Row 4: Status filter
-        status_label = QLabel("Stat:")
-        status_label.setFixedWidth(35)
-        filter_layout.addWidget(status_label, 4, 0)
-        status_filter = QComboBox()
-        status_filter.addItems(["All", "submit", "need fix", "approved"])
-        status_filter.setObjectName("status_filter")
-        status_filter.setMinimumWidth(50)
-        status_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        filter_layout.addWidget(status_filter, 4, 1)
+        # Row 2: Search | Latest toggle | Reset button
+        search_input = QLineEdit()
+        search_input.setPlaceholderText("Search...")
+        search_input.setObjectName("search_input")
+        filter_layout.addWidget(search_input, 2, 0, 1, 2)  # Span 2 columns
+
+        version_toggle = QCheckBox("Latest only")
+        version_toggle.setObjectName("version_toggle")
+        version_toggle.setChecked(True)
+        version_toggle.setStyleSheet("QCheckBox { color: #e0e0e0; }")
+        filter_layout.addWidget(version_toggle, 2, 2, 1, 2)  # Span 2 columns
+
+        reset_btn = QPushButton("Reset")
+        reset_btn.setObjectName("refresh_horus_btn")
+        reset_btn.setToolTip("Reset all filters")
+        filter_layout.addWidget(reset_btn, 2, 4, 1, 2)  # Span 2 columns
 
         layout.addWidget(filter_frame)
-
-        # Version toggle row
-        version_row = QHBoxLayout()
-        version_toggle = QCheckBox("Latest version only")
-        version_toggle.setObjectName("version_toggle")
-        version_toggle.setChecked(True)  # Default to latest only
-        version_toggle.setStyleSheet("QCheckBox { color: #e0e0e0; }")
-        version_row.addWidget(version_toggle)
-        version_row.addStretch()
-        layout.addLayout(version_row)
 
         # Media table header
         layout.addWidget(QLabel("Media Files:"))
@@ -2311,7 +2300,7 @@ def create_search_panel():
 
         # Store references
         widget.project_selector = project_selector
-        widget.refresh_horus_btn = refresh_btn
+        widget.refresh_horus_btn = reset_btn
         widget.media_table = media_table
         widget.episode_filter = episode_filter
         widget.sequence_filter = sequence_filter
@@ -2321,7 +2310,7 @@ def create_search_panel():
         widget.search_input = search_input
         widget.version_toggle = version_toggle
 
-        print("Search panel created (new layout)")
+        print("Search panel created (3-column filter layout)")
         return widget
 
     except Exception as e:
@@ -4519,15 +4508,54 @@ def load_media_in_rv(file_path):
         print(f"Error loading in RV: {e}")
 
 def refresh_horus_data():
-    """Refresh Horus data."""
+    """Reset all filters to default values."""
+    global search_dock, _last_episode_filter, _last_sequence_filter
+
     try:
-        print("Refreshing Horus data...")
-        setup_horus_integration()
-        if current_project_id:
-            on_project_changed()
-        print("Refreshed")
+        print("Resetting filters...")
+        search_widget = search_dock.widget() if search_dock else None
+        if not search_widget:
+            return
+
+        # Block signals during reset
+        search_widget.department_filter.blockSignals(True)
+        search_widget.episode_filter.blockSignals(True)
+        search_widget.sequence_filter.blockSignals(True)
+        search_widget.shot_filter.blockSignals(True)
+        search_widget.status_filter.blockSignals(True)
+        search_widget.search_input.blockSignals(True)
+        search_widget.version_toggle.blockSignals(True)
+
+        # Reset all filters to "All" or default
+        search_widget.department_filter.setCurrentIndex(0)  # "All"
+        search_widget.episode_filter.setCurrentIndex(0)  # "All"
+        search_widget.sequence_filter.clear()
+        search_widget.sequence_filter.addItem("All")
+        search_widget.shot_filter.clear()
+        search_widget.shot_filter.addItem("All")
+        search_widget.status_filter.setCurrentIndex(0)  # "All"
+        search_widget.search_input.clear()
+        search_widget.version_toggle.setChecked(True)  # Latest only
+
+        # Reset tracking variables
+        _last_episode_filter = None
+        _last_sequence_filter = None
+
+        # Unblock signals
+        search_widget.department_filter.blockSignals(False)
+        search_widget.episode_filter.blockSignals(False)
+        search_widget.sequence_filter.blockSignals(False)
+        search_widget.shot_filter.blockSignals(False)
+        search_widget.status_filter.blockSignals(False)
+        search_widget.search_input.blockSignals(False)
+        search_widget.version_toggle.blockSignals(False)
+
+        # Clear the table
+        search_widget.media_table.setRowCount(0)
+
+        print("✅ Filters reset")
     except Exception as e:
-        print(f"Error refreshing: {e}")
+        print(f"Error resetting filters: {e}")
 
 def apply_rv_styling(widget):
     """Apply RV dark theme styling."""
