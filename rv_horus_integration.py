@@ -1079,28 +1079,27 @@ def create_playlist_panel():
         playlist_search._playlist_model = playlist_model
         playlist_search._playlist_completer = playlist_completer
 
-        # Connect signals to show dropdown on click/focus
+        # Connect signals to show dropdown on click/focus (only when empty)
         def show_dropdown_on_focus():
-            """Show all completions when search box gets focus."""
+            """Show all completions when search box gets focus and is empty."""
+            # Only show dropdown if search box is empty
+            if playlist_search.text().strip():
+                return  # User has typed something, let normal autocomplete work
+
             # Get model from widget (not from closure) to ensure we get updated data
             model = getattr(playlist_search, '_playlist_model', None)
             completer = getattr(playlist_search, '_playlist_completer', None)
-            if completer and model:
-                row_count = model.rowCount()
-                print(f"📋 show_dropdown_on_focus: model has {row_count} items")
-                print(f"   Model string list: {model.stringList()}")
+            if completer and model and model.rowCount() > 0:
                 completer.setCompletionPrefix("")
                 completer.complete()
-                print(f"📋 Showing {row_count} playlists in dropdown")
-            else:
-                print(f"⚠️ show_dropdown_on_focus: completer={completer}, model={model}")
 
         # Use event filter to detect focus/click
         from PySide2.QtCore import QObject, QEvent
 
         class SearchFocusFilter(QObject):
             def eventFilter(self, obj, event):
-                if event.type() == QEvent.FocusIn or event.type() == QEvent.MouseButtonPress:
+                # Only show dropdown on initial click, not on every focus
+                if event.type() == QEvent.MouseButtonPress:
                     # Delay slightly to ensure widget is ready
                     from PySide2.QtCore import QTimer
                     QTimer.singleShot(100, show_dropdown_on_focus)
@@ -1736,6 +1735,11 @@ def on_playlist_selected_from_completer(playlist_name):
 
         # Load playlist items into table
         load_playlist_items_to_table(selected_playlist)
+
+        # Clear search box after selection
+        playlist_search = getattr(widget, 'playlist_search', None)
+        if playlist_search:
+            playlist_search.clear()
 
         print(f"✅ Selected playlist: {playlist_name}")
 
