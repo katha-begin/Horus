@@ -270,14 +270,16 @@ class SSHFileSystemProvider(FileSystemProvider):
         return output if success else ""
 
     def write_file(self, path: str, content: str) -> bool:
-        """Write content to file via SSH."""
+        """Write content to file via SSH with sudo."""
         print(f"🔧 SSHProvider.write_file called:")
         print(f"   path: {path}")
         print(f"   content length: {len(content)} bytes")
 
         escaped = content.replace("'", "'\\''")
-        cmd = f"mkdir -p $(dirname '{path}') && echo '{escaped}' > '{path}'"
-        print(f"   Running SSH command...")
+
+        # Use sudo for mkdir and write operations
+        cmd = f"sudo mkdir -p $(dirname '{path}') && echo '{escaped}' | sudo tee '{path}' > /dev/null"
+        print(f"   Running SSH command with sudo...")
 
         success, output = self._run_ssh_command(cmd)
         print(f"   SSH command result: success={success}")
