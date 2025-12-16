@@ -737,15 +737,15 @@ class HorusFileSystem:
             except json.JSONDecodeError as e:
                 print(f"Error parsing shot comments file: {e}")
 
-        # Return empty structure per spec - status is in shot_info
+        # Return empty structure - status is per version in 'versions' dict
         return {
             "version": "1.0",
             "shot_info": {
                 "episode": episode,
                 "sequence": sequence,
-                "shot": shot,
-                "status": "submit"  # Default status
+                "shot": shot
             },
+            "versions": {},  # Status per department_version
             "comments": []
         }
 
@@ -769,19 +769,21 @@ class HorusFileSystem:
         return result
 
     def get_shot_status(self, episode: str, sequence: str, shot: str,
-                        department: str = None, version: str = None) -> str:
-        """Get status for a shot.
+                        department: str, version: str) -> str:
+        """Get status for a specific version.
 
-        Status is stored at shot level in shot_info.status, not per department/version.
+        Status is stored per version: versions[department_version].status
         """
         comments = self.load_shot_comments(episode, sequence, shot)
-        return comments.get("shot_info", {}).get("status", "submit")
+        version_key = f"{department}_{version}"
+        return comments.get("versions", {}).get(version_key, {}).get("status", "submit")
 
     def set_shot_status(self, episode: str, sequence: str, shot: str,
                         department: str, version: str, status: str) -> bool:
-        """Set status for a shot.
+        """Set status for a specific version.
 
-        Per spec: Status is stored in shot_info.status (shot-level, not per version).
+        Status is stored per version in the 'versions' dict.
+        Structure: versions[department_version] = {department, version, status, media_file}
         Comments are stored per-shot at: {Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json
         """
         print(f"📝 set_shot_status called:")
@@ -791,16 +793,21 @@ class HorusFileSystem:
         comments = self.load_shot_comments(episode, sequence, shot)
         print(f"   Loaded shot comments")
 
-        # Store status in shot_info per spec
-        if "shot_info" not in comments:
-            comments["shot_info"] = {
-                "episode": episode,
-                "sequence": sequence,
-                "shot": shot
+        # Ensure versions dict exists
+        if "versions" not in comments:
+            comments["versions"] = {}
+
+        # Store status per version
+        version_key = f"{department}_{version}"
+        if version_key not in comments["versions"]:
+            comments["versions"][version_key] = {
+                "department": department,
+                "version": version,
+                "media_file": f"{shot}_{department}_{version}.mov"
             }
 
-        comments["shot_info"]["status"] = status
-        print(f"   Updated shot_info.status to: {status}")
+        comments["versions"][version_key]["status"] = status
+        print(f"   Updated versions[{version_key}].status to: {status}")
 
         print(f"   Saving shot comments to JSON...")
         result = self.save_shot_comments(episode, sequence, shot, comments)
