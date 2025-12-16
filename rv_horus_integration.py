@@ -40,42 +40,66 @@ def get_ui_state_path():
 
 
 _ui_state_loading = False  # Flag to prevent saving during restore
+_ui_state_cache = {  # Cache of dock visibility (updated by menu actions)
+    'navigator': True,
+    'playlist': True,
+    'comments': True,
+    'media_grid': False
+}
 
-def save_ui_state():
-    """Save dock visibility to local config (only visibility, not positions to avoid corruption)."""
-    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock, _ui_state_loading
+def save_ui_state(dock_name=None, visible=None):
+    """Save dock visibility and geometry to local config.
+
+    Call with dock_name and visible to update specific dock from menu.
+    Call without args to save current cached state.
+    """
+    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
+    global _ui_state_loading, _ui_state_cache
 
     # Don't save while restoring
     if _ui_state_loading:
         return
 
     try:
-        # Save dock visibility only
-        dock_visibility = {
-            'navigator': search_dock.isVisible() if search_dock else True,
-            'playlist': timeline_playlist_dock.isVisible() if timeline_playlist_dock else True,
-            'comments': comments_dock.isVisible() if comments_dock else True,
-            'media_grid': media_grid_dock.isVisible() if media_grid_dock else False,
-        }
+        # If specific dock visibility provided, update cache
+        if dock_name is not None and visible is not None:
+            _ui_state_cache[dock_name] = visible
+
+        # Get dock geometries (positions and sizes)
+        dock_geometry = {}
+        if search_dock and search_dock.isVisible():
+            geo = search_dock.geometry()
+            dock_geometry['navigator'] = {'x': geo.x(), 'y': geo.y(), 'w': geo.width(), 'h': geo.height()}
+        if timeline_playlist_dock and timeline_playlist_dock.isVisible():
+            geo = timeline_playlist_dock.geometry()
+            dock_geometry['playlist'] = {'x': geo.x(), 'y': geo.y(), 'w': geo.width(), 'h': geo.height()}
+        if comments_dock and comments_dock.isVisible():
+            geo = comments_dock.geometry()
+            dock_geometry['comments'] = {'x': geo.x(), 'y': geo.y(), 'w': geo.width(), 'h': geo.height()}
+        if media_grid_dock and media_grid_dock.isVisible():
+            geo = media_grid_dock.geometry()
+            dock_geometry['media_grid'] = {'x': geo.x(), 'y': geo.y(), 'w': geo.width(), 'h': geo.height()}
 
         ui_state = {
-            'dock_visibility': dock_visibility,
-            'version': 2
+            'dock_visibility': _ui_state_cache.copy(),
+            'dock_geometry': dock_geometry,
+            'version': 3
         }
 
         state_path = get_ui_state_path()
         with open(state_path, 'w', encoding='utf-8') as f:
             json.dump(ui_state, f, indent=2)
 
-        # Only print on actual user-triggered save (not too verbose)
+        print(f"✅ UI state saved")
 
     except Exception as e:
         print(f"⚠️ Could not save UI state: {e}")
 
 
 def restore_ui_state():
-    """Restore dock visibility only from local config (skip window state to avoid corruption)."""
-    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock, _ui_state_loading
+    """Restore dock visibility and geometry from local config."""
+    global search_dock, comments_dock, timeline_playlist_dock, media_grid_dock
+    global _ui_state_loading, _ui_state_cache
 
     try:
         _ui_state_loading = True  # Prevent save during restore
@@ -89,19 +113,41 @@ def restore_ui_state():
         with open(state_path, 'r', encoding='utf-8') as f:
             ui_state = json.load(f)
 
-        # Only restore dock visibility (NOT window state - it can corrupt RV's native docks)
+        # Restore dock visibility
         dock_visibility = ui_state.get('dock_visibility', {})
 
-        if search_dock:
-            search_dock.setVisible(dock_visibility.get('navigator', True))
-        if timeline_playlist_dock:
-            timeline_playlist_dock.setVisible(dock_visibility.get('playlist', True))
-        if comments_dock:
-            comments_dock.setVisible(dock_visibility.get('comments', True))
-        if media_grid_dock:
-            media_grid_dock.setVisible(dock_visibility.get('media_grid', False))
+        # Update cache with loaded values
+        _ui_state_cache['navigator'] = dock_visibility.get('navigator', True)
+        _ui_state_cache['playlist'] = dock_visibility.get('playlist', True)
+        _ui_state_cache['comments'] = dock_visibility.get('comments', True)
+        _ui_state_cache['media_grid'] = dock_visibility.get('media_grid', False)
 
-        print(f"✅ Dock visibility restored from {state_path}")
+        if search_dock:
+            search_dock.setVisible(_ui_state_cache['navigator'])
+        if timeline_playlist_dock:
+            timeline_playlist_dock.setVisible(_ui_state_cache['playlist'])
+        if comments_dock:
+            comments_dock.setVisible(_ui_state_cache['comments'])
+        if media_grid_dock:
+            media_grid_dock.setVisible(_ui_state_cache['media_grid'])
+
+        # Restore dock geometry (positions and sizes)
+        dock_geometry = ui_state.get('dock_geometry', {})
+
+        if search_dock and 'navigator' in dock_geometry:
+            geo = dock_geometry['navigator']
+            search_dock.setGeometry(geo['x'], geo['y'], geo['w'], geo['h'])
+        if timeline_playlist_dock and 'playlist' in dock_geometry:
+            geo = dock_geometry['playlist']
+            timeline_playlist_dock.setGeometry(geo['x'], geo['y'], geo['w'], geo['h'])
+        if comments_dock and 'comments' in dock_geometry:
+            geo = dock_geometry['comments']
+            comments_dock.setGeometry(geo['x'], geo['y'], geo['w'], geo['h'])
+        if media_grid_dock and 'media_grid' in dock_geometry:
+            geo = dock_geometry['media_grid']
+            media_grid_dock.setGeometry(geo['x'], geo['y'], geo['w'], geo['h'])
+
+        print(f"✅ UI state restored from {state_path}")
         _ui_state_loading = False
         return True
 
@@ -247,7 +293,8 @@ def toggle_dock_visibility(dock_name, visible):
     dock = dock_map.get(dock_name)
     if dock:
         dock.setVisible(visible)
-        save_ui_state()
+        # Save with specific dock name and visibility to update cache
+        save_ui_state(dock_name, visible)
         print(f"{'✅ Showing' if visible else '❌ Hiding'} {dock_name} panel")
 
 
@@ -5724,18 +5771,14 @@ def create_modular_media_browser():
         # Setup Horus integration
         setup_horus_integration()
 
-        # Setup Horus menu in RV menu bar
+        # Setup Horus menu in RV menu bar (will save state when user toggles panels)
         setup_horus_menu()
 
         # Restore saved UI state (dock positions, sizes, visibility)
         restore_ui_state()
 
-        # Connect dock visibility changes to auto-save
-        search_dock.visibilityChanged.connect(lambda: save_ui_state())
-        comments_dock.visibilityChanged.connect(lambda: save_ui_state())
-        media_grid_dock.visibilityChanged.connect(lambda: save_ui_state())
-        if playlist_dock:
-            playlist_dock.visibilityChanged.connect(lambda: save_ui_state())
+        # NOTE: We only save UI state when user explicitly toggles panels from Horus menu
+        # This prevents saving wrong state when app closes (Qt hides docks before close)
 
         print("SUCCESS: Modular MediaBrowser with Horus integration created!")
         return True
