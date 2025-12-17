@@ -988,5 +988,49 @@
     "clips": [],
     "tracks": [],
     "metadata": {}
+  },
+  {
+    "_id": "playlist_006",
+    "name": "teset2",
+    "project_id": "proj_001",
+    "created_by": "user",
+    "created_at": "2025-12-16T10:43:49.159010Z",
+    "updated_at": "2025-12-16T10:43:49.159010Z",
+    "description": "User created playlist: teset2",
+    "type": "user_created",
+    "status": "draft",
+    "settings": {
+      "auto_play": true,
+      "loop": false,
+      "show_timecode": true,
+      "default_track_height": 60,
+      "timeline_zoom": 1.0,
+      "color_coding_enabled": true
+    },
+    "clips": [],
+    "tracks": [
+      {
+        "track_id": 1,
+        "name": "Video Track 1",
+        "type": "video",
+        "height": 60,
+        "locked": false,
+        "muted": false,
+        "solo": false,
+        "color": "#2d2d2d"
+      }
+    ],
+    "metadata": {
+      "total_duration": 0,
+      "clip_count": 0,
+      "departments": [],
+      "sequences": [],
+      "last_played_position": 0,
+      "playback_settings": {
+        "frame_rate": 24,
+        "resolution": "1920x1080",
+        "color_space": "Rec709"
+      }
+    }
   }
 ]

@@ -17,6 +17,6 @@ if exist "dist\horus-rv.exe" (
     "horus-rv.exe"
 ) else (
     echo Fallback: Direct launch...
-    cd /d "C:\Users\ADMIN\Documents\augment-projects\Horus"
-    "C:\OpenRv\_build\stage\app\bin\rv.exe" -pyeval "exec(open('rv_horus_integration.py').read())"
+    cd /d "%~dp0"
+    "D:\Program Files\stage\app\bin\rv.exe" -pyeval "exec(open('rv_horus_integration.py').read())"
 )

@@ -639,6 +639,9 @@ class HorusFileSystem:
             status_entry = sequence_caches[seq_key].get("statuses", {}).get(status_key)
             status = status_entry.get("current_status", "wip") if status_entry else "wip"
 
+            # DEBUG: Log status loading
+            print(f"   🔍 Status for {status_key}: entry={status_entry is not None}, status={status}")
+
             media_item = {
                 "file_name": file_name,
                 "file_path": file_path,
@@ -736,6 +739,9 @@ class HorusFileSystem:
             status_key = f"{sh}_{dept}_{version}"
             status_entry = sequence_caches[seq_key].get("statuses", {}).get(status_key)
             status = status_entry.get("current_status", "wip") if status_entry else "wip"
+
+            # DEBUG: Log status loading
+            print(f"   🔍 Status for {status_key}: entry={status_entry is not None}, status={status}")
 
             media_item = {
                 "file_name": file_name,

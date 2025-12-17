@@ -1785,6 +1785,9 @@ def load_playlist_items_to_table(playlist_data):
             else:
                 status = clip.get("status", "wip")  # Fallback
 
+            # DEBUG: Log playlist status loading
+            print(f"   🔍 Playlist row {row}: status={status}, name={name}, dept={dept}, version={version}")
+
             status_combo = create_status_dropdown(status, clip, on_playlist_status_changed)
             table.setCellWidget(row, 3, status_combo)
 
@@ -3915,6 +3918,10 @@ def update_media_table_fs(media_items):
 
             # Status column - DROPDOWN (using shared function)
             status = item.get('status', 'submit')
+
+            # DEBUG: Log status from item
+            print(f"   🔍 Navigator row {row}: item status={status}, name={name}, dept={dept}, version={version}")
+
             status_combo = create_status_dropdown(status, item, on_navigator_status_changed)
             media_table.setCellWidget(row, 3, status_combo)
 
@@ -3925,12 +3932,22 @@ def update_media_table_fs(media_items):
 
 
 def create_status_dropdown(status, item_data, on_change_callback):
-    """Create a status dropdown widget - SHARED by Navigator and Playlist tables."""
+    """Create a status dropdown widget - SHARED by Navigator and Playlist tables.
+
+    Status values:
+    - "wip" (default) - first item in dropdown
+    - "approved", "submit", "need fix", "on hold" (user-selectable)
+    """
     from PySide2.QtWidgets import QComboBox
 
     status_combo = QComboBox()
-    status_combo.addItems(["approved", "submit", "need fix", "on hold"])
+
+    # Add all status items with "wip" as first item
+    status_combo.addItems(["wip", "approved", "submit", "need fix", "on hold"])
     status_combo.setCurrentText(status)
+
+    # DEBUG: Log status being set
+    print(f"   🎨 create_status_dropdown: status='{status}', current_text='{status_combo.currentText()}'")
     status_combo.setStyleSheet("""
         QComboBox {
             background-color: #3a3a3a;

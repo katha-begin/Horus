@@ -93,7 +93,8 @@ IMAGE_ROOT = "/mnt/igloo_swa_w/"    # Image sequences (.exr)
   "shot_info": {
     "episode": "Ep02",
     "sequence": "sq0010",
-    "shot": "SH0010"
+    "shot": "SH0010",
+    "status": "approved"
   },
   "comments": [
     {
