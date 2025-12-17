@@ -348,6 +348,7 @@ class HorusFileSystem:
         self.image_root: str = ""
         self.scene_base: str = ""
         self.horus_data: str = ""
+        self.status_cache: Dict[str, Dict] = {}  # {episode_sequence: status_data}
 
     def auto_detect(self) -> bool:
         """Auto-detect available access method based on PREFERRED_ACCESS_MODE."""
@@ -614,9 +615,8 @@ class HorusFileSystem:
             version = self._extract_version(file_name)
             key = f"{ep}_{sh}_{dept}"
 
-            # TODO: Load status from cache for efficiency
-            # For now, hardcode to "submit" - will implement batch loading
-            status = "submit"
+            # Load status from sequence cache (defaults to "wip" if not set)
+            status = self.get_shot_status(ep, seq, sh, dept, version)
 
             media_item = {
                 "file_name": file_name,
@@ -683,9 +683,8 @@ class HorusFileSystem:
             version = self._extract_version(file_name)
             key = f"{ep}_{sh}_{dept}"
 
-            # TODO: Load status from cache for efficiency
-            # For now, hardcode to "submit" - will implement batch loading
-            status = "submit"
+            # Load status from sequence cache (defaults to "wip" if not set)
+            status = self.get_shot_status(ep, seq, sh, dept, version)
 
             media_item = {
                 "file_name": file_name,
@@ -734,6 +733,14 @@ class HorusFileSystem:
         """
         return f"{self.scene_base}/{episode}/{sequence}/{shot}/.horus/{shot}_comments.json"
 
+    def get_sequence_status_file_path(self, episode: str, sequence: str) -> str:
+        """Get path to sequence status cache file.
+
+        Path: {PROJECT_ROOT}/SWA/all/scene/{Episode}/.horus/status/{Sequence}_status.json
+        Example: /mnt/igloo_swa_v/SWA/all/scene/Ep01/.horus/status/sq0010_status.json
+        """
+        return f"{self.scene_base}/{episode}/.horus/status/{sequence}_status.json"
+
     def load_shot_comments(self, episode: str, sequence: str, shot: str) -> Dict:
         """Load comments for a specific shot."""
         if not self.provider:
@@ -778,49 +785,139 @@ class HorusFileSystem:
         print(f"   Write result: {result}")
         return result
 
+    def load_sequence_status_cache(self, episode: str, sequence: str) -> Dict:
+        """Load status cache for a sequence.
+
+        Returns structure:
+        {
+          "version": "1.0",
+          "episode": "Ep01",
+          "sequence": "sq0010",
+          "last_updated": "2025-12-17T10:30:00Z",
+          "statuses": {
+            "SH0010_comp_v012": {
+              "current_status": "approved",
+              "last_changed": "2025-12-17T10:30:00Z",
+              "last_changed_by": "john.doe",
+              "history": [...]
+            }
+          }
+        }
+        """
+        if not self.provider:
+            return {}
+
+        cache_key = f"{episode}_{sequence}"
+
+        # Check in-memory cache first
+        if cache_key in self.status_cache:
+            return self.status_cache[cache_key]
+
+        # Load from file
+        path = self.get_sequence_status_file_path(episode, sequence)
+        content = self.provider.read_file(path)
+
+        if content:
+            try:
+                data = json.loads(content)
+                self.status_cache[cache_key] = data
+                return data
+            except json.JSONDecodeError as e:
+                print(f"Error parsing status cache file: {e}")
+
+        # Return empty structure
+        return {
+            "version": "1.0",
+            "episode": episode,
+            "sequence": sequence,
+            "last_updated": datetime.utcnow().isoformat(),
+            "statuses": {}
+        }
+
+    def save_sequence_status_cache(self, episode: str, sequence: str, cache_data: Dict) -> bool:
+        """Save status cache for a sequence."""
+        if not self.provider:
+            return False
+
+        cache_key = f"{episode}_{sequence}"
+
+        # Update in-memory cache
+        self.status_cache[cache_key] = cache_data
+
+        # Update last_updated timestamp
+        cache_data["last_updated"] = datetime.utcnow().isoformat()
+
+        # Write to file
+        path = self.get_sequence_status_file_path(episode, sequence)
+        content = json.dumps(cache_data, indent=2)
+        return self.provider.write_file(path, content)
+
     def get_shot_status(self, episode: str, sequence: str, shot: str,
                         department: str, version: str) -> str:
-        """Get status for a specific version.
+        """Get status for a specific version from sequence status cache.
 
-        Status is stored per version: versions[department_version].status
+        Returns "wip" if no status is set (default for all new shots).
         """
-        comments = self.load_shot_comments(episode, sequence, shot)
-        version_key = f"{department}_{version}"
-        return comments.get("versions", {}).get(version_key, {}).get("status", "submit")
+        cache_data = self.load_sequence_status_cache(episode, sequence)
+        status_key = f"{shot}_{department}_{version}"
+
+        status_entry = cache_data.get("statuses", {}).get(status_key)
+        if status_entry:
+            return status_entry.get("current_status", "wip")
+
+        return "wip"  # Default status for shots without explicit status
 
     def set_shot_status(self, episode: str, sequence: str, shot: str,
                         department: str, version: str, status: str) -> bool:
-        """Set status for a specific version.
+        """Set status for a specific version in sequence status cache.
 
-        Status is stored per version in the 'versions' dict.
-        Structure: versions[department_version] = {department, version, status, media_file}
-        Comments are stored per-shot at: {Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json
+        Saves to: {Episode}/.horus/status/{Sequence}_status.json
+        Keeps full history of status changes with user and timestamp.
         """
+        import os
+
         print(f"📝 set_shot_status called:")
         print(f"   episode={episode}, sequence={sequence}, shot={shot}")
         print(f"   department={department}, version={version}, status={status}")
 
-        comments = self.load_shot_comments(episode, sequence, shot)
-        print(f"   Loaded shot comments")
+        # Load sequence status cache
+        cache_data = self.load_sequence_status_cache(episode, sequence)
+        print(f"   Loaded sequence status cache")
 
-        # Ensure versions dict exists
-        if "versions" not in comments:
-            comments["versions"] = {}
+        # Get current user from OS environment
+        current_user = os.environ.get('USER') or os.environ.get('USERNAME') or 'unknown'
+        current_time = datetime.utcnow().isoformat()
 
-        # Store status per version
-        version_key = f"{department}_{version}"
-        if version_key not in comments["versions"]:
-            comments["versions"][version_key] = {
-                "department": department,
-                "version": version,
-                "media_file": f"{shot}_{department}_{version}.mov"
+        # Create status key
+        status_key = f"{shot}_{department}_{version}"
+
+        # Get or create status entry
+        if status_key not in cache_data["statuses"]:
+            cache_data["statuses"][status_key] = {
+                "current_status": status,
+                "last_changed": current_time,
+                "last_changed_by": current_user,
+                "history": []
             }
 
-        comments["versions"][version_key]["status"] = status
-        print(f"   Updated versions[{version_key}].status to: {status}")
+        # Add to history
+        status_entry = cache_data["statuses"][status_key]
+        status_entry["history"].append({
+            "status": status,
+            "changed_at": current_time,
+            "changed_by": current_user
+        })
 
-        print(f"   Saving shot comments to JSON...")
-        result = self.save_shot_comments(episode, sequence, shot, comments)
+        # Update current status
+        status_entry["current_status"] = status
+        status_entry["last_changed"] = current_time
+        status_entry["last_changed_by"] = current_user
+
+        print(f"   Updated status cache: {status_key} -> {status}")
+        print(f"   Changed by: {current_user} at {current_time}")
+
+        # Save to file
+        result = self.save_sequence_status_cache(episode, sequence, cache_data)
         print(f"   Save result: {result}")
         return result
 
