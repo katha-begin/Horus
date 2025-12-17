@@ -3950,6 +3950,16 @@ def update_media_table_fs(media_items):
             return
 
         media_table = search_widget.media_table
+
+        # Clear all cell widgets before clearing rows
+        for row in range(media_table.rowCount()):
+            for col in range(media_table.columnCount()):
+                widget = media_table.cellWidget(row, col)
+                if widget:
+                    media_table.removeCellWidget(row, col)
+
+        # Clear all rows
+        media_table.clearContents()
         media_table.setRowCount(0)
 
         for item in media_items:
