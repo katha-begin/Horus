@@ -933,7 +933,7 @@ info = vm.get_version_info()
 | **Comments** | `{Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json` | `Ep01/sq0010/SH0010/.horus/SH0010_comments.json` |
 | **Playlists** | `.horus/playlists.json` | `/mnt/igloo_swa_v/SWA/all/scene/.horus/playlists.json` |
 | **MOV Files (V:)** | `{Episode}/{Sequence}/{Shot}/{Dept}/output/{Shot}_{Dept}_{Version}.mov` | `Ep01/sq0010/SH0010/comp/output/SH0010_comp_v003.mov` |
-| **Image Seq (W:)** | `{Episode}/{Sequence}/{Shot}/{Dept}/version/{Version}/*.exr` | `Ep01/sq0010/SH0010/comp/version/v003/*.exr` |
+| **Image Seq (W:)** | `{Episode}/{Sequence}/{Shot}/{Dept}/version/{Version}/*` | `Ep01/sq0010/SH0010/comp/version/v003/*.exr` (supports exr, png, jpg, tiff, dpx, etc.) |
 | **Annotations** | `{Episode}/{Sequence}/{Shot}/{Dept}/annotations/{Version}/{Shot}_{Dept}_{Version}.{Frame}.png` | `Ep01/sq0010/SH0010/comp/annotations/v003/SH0010_comp_v003.0045.png` |
 
 ---

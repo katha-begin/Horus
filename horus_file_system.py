@@ -460,34 +460,52 @@ class HorusFileSystem:
 
         return self.convert_path_for_rv(path) if path else ''
 
+    # Supported image sequence formats
+    IMAGE_EXTENSIONS = {'.exr', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.dpx', '.cin', '.sgi'}
+
     def resolve_image_sequence_pattern(self, seq_path: str) -> str:
         """Resolve image sequence pattern for RV.
 
-        Converts: .../v003/*.exr
-        To: .../v003/filename.%04d.exr or first frame path
+        Converts: .../v003/* or .../v003/*.exr
+        To: .../v003/filename.0001.exr (first frame path)
 
         RV can auto-detect sequences from a single frame path.
+        Supports: exr, png, jpg, jpeg, tiff, tif, dpx, cin, sgi
         """
         if not seq_path or '*' not in seq_path:
             return seq_path
 
-        # Get the folder path and find actual files
+        # Get the folder path
         folder_path = seq_path.rsplit('/', 1)[0] if '/' in seq_path else seq_path.rsplit('\\', 1)[0]
 
         if self.access_mode == "ssh":
-            # Find first file in the folder
-            cmd = f"ls -1 '{folder_path}' 2>/dev/null | head -1"
+            # Find first image file in the folder
+            # Filter for image extensions
+            ext_pattern = '|'.join(ext.lstrip('.') for ext in self.IMAGE_EXTENSIONS)
+            cmd = f"ls -1 '{folder_path}' 2>/dev/null | grep -iE '\\.({ext_pattern})$' | sort | head -1"
             success, output = self.provider._run_ssh_command(cmd, timeout=10)
             if success and output:
                 first_file = output.strip()
-                return f"{folder_path}/{first_file}"
+                if first_file:
+                    return f"{folder_path}/{first_file}"
         else:
-            # Local: list directory
+            # Local: list directory and filter for image files
             import glob
-            pattern = seq_path.replace('/', os.sep)
-            files = sorted(glob.glob(pattern))
-            if files:
-                return files[0].replace('\\', '/')
+            folder_path_os = folder_path.replace('/', os.sep)
+
+            # Find all files and filter by extension
+            all_files = []
+            for ext in self.IMAGE_EXTENSIONS:
+                pattern = os.path.join(folder_path_os, f'*{ext}')
+                all_files.extend(glob.glob(pattern))
+                # Also check uppercase extension
+                pattern_upper = os.path.join(folder_path_os, f'*{ext.upper()}')
+                all_files.extend(glob.glob(pattern_upper))
+
+            if all_files:
+                # Sort and return first file
+                first_file = sorted(all_files)[0]
+                return first_file.replace('\\', '/')
 
         return seq_path
 
@@ -855,8 +873,9 @@ class HorusFileSystem:
             version = parts[-1].lower()  # v001, v002, etc.
 
             # Construct image sequence path pattern
-            # Pattern: .../version/v003/*.exr (will be resolved when loading)
-            seq_path = f"{folder_path}/*.exr"
+            # Use wildcard - actual extension will be detected when loading
+            # Supported formats: exr, png, jpg, jpeg, tiff, tif, dpx
+            seq_path = f"{folder_path}/*"  # Wildcard for any format
 
             return {
                 "episode": ep,
