@@ -467,45 +467,60 @@ class HorusFileSystem:
         """Resolve image sequence pattern for RV.
 
         Converts: .../v003/* or .../v003/*.exr
-        To: .../v003/filename.0001.exr (first frame path)
+        To: .../v003/filename.####.exr (RV sequence notation)
 
-        RV can auto-detect sequences from a single frame path.
+        RV uses #### or %04d notation to load full frame range.
         Supports: exr, png, jpg, jpeg, tiff, tif, dpx, cin, sgi
         """
+        import re
+
         if not seq_path or '*' not in seq_path:
             return seq_path
 
         # Get the folder path
         folder_path = seq_path.rsplit('/', 1)[0] if '/' in seq_path else seq_path.rsplit('\\', 1)[0]
 
+        first_file = None
+
         if self.access_mode == "ssh":
             # Find first image file in the folder
-            # Filter for image extensions
             ext_pattern = '|'.join(ext.lstrip('.') for ext in self.IMAGE_EXTENSIONS)
             cmd = f"ls -1 '{folder_path}' 2>/dev/null | grep -iE '\\.({ext_pattern})$' | sort | head -1"
             success, output = self.provider._run_ssh_command(cmd, timeout=10)
             if success and output:
                 first_file = output.strip()
-                if first_file:
-                    return f"{folder_path}/{first_file}"
         else:
             # Local: list directory and filter for image files
             import glob
             folder_path_os = folder_path.replace('/', os.sep)
 
-            # Find all files and filter by extension
             all_files = []
             for ext in self.IMAGE_EXTENSIONS:
                 pattern = os.path.join(folder_path_os, f'*{ext}')
                 all_files.extend(glob.glob(pattern))
-                # Also check uppercase extension
                 pattern_upper = os.path.join(folder_path_os, f'*{ext.upper()}')
                 all_files.extend(glob.glob(pattern_upper))
 
             if all_files:
-                # Sort and return first file
-                first_file = sorted(all_files)[0]
-                return first_file.replace('\\', '/')
+                first_file = os.path.basename(sorted(all_files)[0])
+
+        if first_file:
+            # Convert frame number to RV sequence notation (#### or %04d)
+            # Match patterns like: filename.0001.exr or filename_0001.exr or filename0001.exr
+            # Find frame number pattern (sequence of digits before extension)
+            match = re.search(r'(\d+)(\.[^.]+)$', first_file)
+            if match:
+                frame_num = match.group(1)
+                ext = match.group(2)
+                # Replace frame number with # pattern (same length)
+                frame_pattern = '#' * len(frame_num)
+                # Get the base name without frame number
+                base_name = first_file[:match.start(1)]
+                sequence_file = f"{base_name}{frame_pattern}{ext}"
+                return f"{folder_path}/{sequence_file}"
+            else:
+                # No frame number found, return as single file
+                return f"{folder_path}/{first_file}"
 
         return seq_path
 
@@ -851,6 +866,7 @@ class HorusFileSystem:
         """Parse image sequence version folder path to extract metadata.
 
         Path: .../Ep01/sq0010/SH0010/comp/version/v003/
+        Or:   .../Ep01/sq0010/SH0010/version/v003/ (no department)
         """
         parts = folder_path.rstrip('/').split('/')
         try:
@@ -866,15 +882,32 @@ class HorusFileSystem:
             sh_idx = next(i for i in range(seq_idx + 1, len(parts)) if parts[i].startswith('SH'))
             sh = parts[sh_idx]
 
-            # Department is after shot
-            dept = parts[sh_idx + 1]
-
-            # Version is the folder name (last part)
+            # Version is the folder name (last part, starts with 'v')
             version = parts[-1].lower()  # v001, v002, etc.
 
+            # Find 'version' folder position
+            version_folder_idx = None
+            for i in range(sh_idx + 1, len(parts)):
+                if parts[i] == 'version':
+                    version_folder_idx = i
+                    break
+
+            # Department is between shot and 'version' folder (if exists)
+            dept = ""
+            if version_folder_idx and version_folder_idx > sh_idx + 1:
+                dept = parts[sh_idx + 1]
+            elif sh_idx + 1 < len(parts) and parts[sh_idx + 1] != 'version':
+                # Department exists between shot and version folder
+                dept = parts[sh_idx + 1]
+
+            # If still no department, try common department names
+            if not dept:
+                for i in range(sh_idx + 1, len(parts)):
+                    if parts[i] in ['anim', 'comp', 'lighting', 'layout', 'hero', 'fx', 'model', 'rig']:
+                        dept = parts[i]
+                        break
+
             # Construct image sequence path pattern
-            # Use wildcard - actual extension will be detected when loading
-            # Supported formats: exr, png, jpg, jpeg, tiff, tif, dpx
             seq_path = f"{folder_path}/*"  # Wildcard for any format
 
             return {
@@ -966,6 +999,16 @@ class HorusFileSystem:
             else:
                 results.extend(items)
 
+        # Sort results by shot name (natural sort for SH0010, SH0020, etc.)
+        def sort_key(item):
+            shot = item.get('shot', '')
+            # Extract numeric part from shot name (e.g., SH0010 -> 10)
+            import re
+            match = re.search(r'(\d+)', shot)
+            shot_num = int(match.group(1)) if match else 0
+            return (item.get('episode', ''), item.get('sequence', ''), shot_num, item.get('department', ''))
+
+        results.sort(key=sort_key)
         return results
 
     # ========================================================================
