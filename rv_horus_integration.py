@@ -1785,9 +1785,6 @@ def load_playlist_items_to_table(playlist_data):
             else:
                 status = clip.get("status", "wip")  # Fallback
 
-            # DEBUG: Log playlist status loading
-            print(f"   🔍 Playlist row {row}: status={status}, name={name}, dept={dept}, version={version}")
-
             status_combo = create_status_dropdown(status, clip, on_playlist_status_changed)
             table.setCellWidget(row, 3, status_combo)
 
@@ -3934,15 +3931,12 @@ def update_media_table_fs(media_items):
 def create_status_dropdown(status, item_data, on_change_callback):
     """Create a status dropdown widget - SHARED by Navigator and Playlist tables.
 
-    Status values:
-    - "wip" (default) - first item in dropdown
-    - "approved", "submit", "need fix", "on hold" (user-selectable)
+    Status values: "wip", "approved", "submit", "need fix", "on hold"
     """
     from PySide2.QtWidgets import QComboBox
 
     status_combo = QComboBox()
-
-    # Add all status items with "wip" as first item
+    # Add all status items including "wip" as first item
     status_combo.addItems(["wip", "approved", "submit", "need fix", "on hold"])
     status_combo.setCurrentText(status)
 
