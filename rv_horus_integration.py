@@ -1511,6 +1511,14 @@ def load_timeline_playlist_data():
         # Initialize playlist manager with file system
         _ensure_playlist_manager()
 
+        # DEBUG: Check file system status
+        print(f"📋 load_timeline_playlist_data:")
+        print(f"   horus_playlists: {horus_playlists}")
+        print(f"   horus_playlists.fs: {horus_playlists.fs if horus_playlists else None}")
+        if horus_playlists and horus_playlists.fs:
+            playlist_path = horus_playlists.fs.get_playlists_file_path()
+            print(f"   Playlist file path: {playlist_path}")
+
         # Load playlists from backend
         timeline_playlist_data = horus_playlists.load_playlists()
 
@@ -1656,11 +1664,18 @@ def on_playlist_search_enter_pressed():
         if not search_text:
             return
 
+        # DEBUG: Log search attempt
+        print(f"🔍 Searching for playlist: '{search_text}'")
+        print(f"   Available playlists: {len(timeline_playlist_data or [])} total")
+        for i, p in enumerate(timeline_playlist_data or []):
+            print(f"   [{i}] {p.get('name', 'Unnamed')}")
+
         # Find playlist that matches (case-insensitive)
         for playlist in timeline_playlist_data or []:
             name = playlist.get("name", "")
             if name.lower() == search_text.lower():
                 # Found exact match
+                print(f"✅ Found exact match: {name}")
                 on_playlist_selected_from_completer(name)
                 return
 
@@ -1668,6 +1683,7 @@ def on_playlist_search_enter_pressed():
         for playlist in timeline_playlist_data or []:
             name = playlist.get("name", "")
             if search_text.lower() in name.lower():
+                print(f"✅ Found partial match: {name}")
                 on_playlist_selected_from_completer(name)
                 playlist_search.setText(name)  # Update search text
                 return
