@@ -164,6 +164,54 @@ Horus is a VFX review application built on Open RV 3.0.0 for the SWA animation p
 - Location: `{Episode}/{Sequence}/{Shot}/{Department}/annotations/{Version}/`
 - Example: `Ep01/sq0010/SH0010/comp/annotations/v003/SH0010_comp_v003.0045.png`
 
+### 3.3 Dual Media Source Support
+
+Horus supports two media sources that contain the same content in different formats:
+
+**MOV Files (V: Drive / igloo_swa_v):**
+```
+/mnt/igloo_swa_v/SWA/all/scene/{Episode}/{Sequence}/{Shot}/{Department}/output/{Shot}_{Dept}_{Version}.mov
+```
+Example: `/mnt/igloo_swa_v/SWA/all/scene/Ep01/sq0010/SH0010/comp/output/SH0010_comp_v003.mov`
+
+**Image Sequences (W: Drive / igloo_swa_w):**
+```
+/mnt/igloo_swa_w/SWA/all/scene/{Episode}/{Sequence}/{Shot}/{Department}/version/{Version}/{filename}.{frame}.{ext}
+```
+Example: `/mnt/igloo_swa_w/SWA/all/scene/Ep01/sq0010/SH0010/comp/version/v003/SH0010_comp_v003.1001.exr`
+
+**Key Points:**
+- MOV and image sequences are the **same media item** - just different formats
+- They always exist together with the **same version**
+- One media item = one status, one set of comments
+- User toggle in UI controls **which format to play** in RV
+- Data structure contains **both paths** for each media item
+
+**Unified Media Item Structure:**
+```python
+{
+    "name": "Ep01_SH0010",
+    "file_name": "SH0010_comp_v003",
+    "episode": "Ep01",
+    "sequence": "sq0010",
+    "shot": "SH0010",
+    "department": "comp",
+    "version": "v003",
+    "status": "approved",
+    "media_type": "both",           # "both", "mov_only", or "image_only"
+    "mov_path": "/mnt/igloo_swa_v/.../output/SH0010_comp_v003.mov",
+    "image_seq_path": "/mnt/igloo_swa_w/.../version/v003/*.exr",
+    "image_seq_folder": "/mnt/igloo_swa_w/.../version/v003",
+    "file_path": "..."              # Legacy field for backward compatibility
+}
+```
+
+**UI Media Source Toggle:**
+- Located in Navigator filter panel (Row 3)
+- Radio buttons: "Image Seq" (default) | "MOV"
+- Affects playback in both Navigator and Playlist tables
+- Does NOT affect status, comments, or filtering
+
 ---
 
 ## 4. Data Storage
@@ -884,7 +932,8 @@ info = vm.get_version_info()
 | **Status Cache** | `{Episode}/.horus/status/{Sequence}_status.json` | `Ep01/.horus/status/sq0010_status.json` |
 | **Comments** | `{Episode}/{Sequence}/{Shot}/.horus/{Shot}_comments.json` | `Ep01/sq0010/SH0010/.horus/SH0010_comments.json` |
 | **Playlists** | `.horus/playlists.json` | `/mnt/igloo_swa_v/SWA/all/scene/.horus/playlists.json` |
-| **Media Files** | `{Episode}/{Sequence}/{Shot}/{Dept}/output/{Shot}_{Dept}_{Version}.mov` | `Ep01/sq0010/SH0010/comp/output/SH0010_comp_v003.mov` |
+| **MOV Files (V:)** | `{Episode}/{Sequence}/{Shot}/{Dept}/output/{Shot}_{Dept}_{Version}.mov` | `Ep01/sq0010/SH0010/comp/output/SH0010_comp_v003.mov` |
+| **Image Seq (W:)** | `{Episode}/{Sequence}/{Shot}/{Dept}/version/{Version}/*.exr` | `Ep01/sq0010/SH0010/comp/version/v003/*.exr` |
 | **Annotations** | `{Episode}/{Sequence}/{Shot}/{Dept}/annotations/{Version}/{Shot}_{Dept}_{Version}.{Frame}.png` | `Ep01/sq0010/SH0010/comp/annotations/v003/SH0010_comp_v003.0045.png` |
 
 ---

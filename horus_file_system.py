@@ -426,6 +426,8 @@ class HorusFileSystem:
 
     def convert_path_for_rv(self, path: str) -> str:
         """Convert path for RV playback (always use local path if mounted)."""
+        if not path:
+            return path
         if self.access_mode == "local":
             return path
         # For SSH mode, convert Linux path to Windows mount if available
@@ -434,6 +436,60 @@ class HorusFileSystem:
             path = path.replace(LINUX_IMAGE_ROOT, WINDOWS_IMAGE_ROOT)
             path = path.replace("/", "\\")
         return path
+
+    def get_playback_path(self, media_item: Dict, prefer_image_seq: bool = True) -> str:
+        """Get the appropriate file path for playback based on preference.
+
+        Args:
+            media_item: Media item dict containing mov_path and image_seq_path
+            prefer_image_seq: If True, prefer image sequence; if False, prefer MOV
+
+        Returns:
+            The file path to use for playback (already converted for RV)
+        """
+        if prefer_image_seq:
+            # Prefer image sequence, fallback to MOV
+            path = media_item.get('image_seq_path') or media_item.get('mov_path')
+        else:
+            # Prefer MOV, fallback to image sequence
+            path = media_item.get('mov_path') or media_item.get('image_seq_path')
+
+        # Also check legacy file_path field
+        if not path:
+            path = media_item.get('file_path', '')
+
+        return self.convert_path_for_rv(path) if path else ''
+
+    def resolve_image_sequence_pattern(self, seq_path: str) -> str:
+        """Resolve image sequence pattern for RV.
+
+        Converts: .../v003/*.exr
+        To: .../v003/filename.%04d.exr or first frame path
+
+        RV can auto-detect sequences from a single frame path.
+        """
+        if not seq_path or '*' not in seq_path:
+            return seq_path
+
+        # Get the folder path and find actual files
+        folder_path = seq_path.rsplit('/', 1)[0] if '/' in seq_path else seq_path.rsplit('\\', 1)[0]
+
+        if self.access_mode == "ssh":
+            # Find first file in the folder
+            cmd = f"ls -1 '{folder_path}' 2>/dev/null | head -1"
+            success, output = self.provider._run_ssh_command(cmd, timeout=10)
+            if success and output:
+                first_file = output.strip()
+                return f"{folder_path}/{first_file}"
+        else:
+            # Local: list directory
+            import glob
+            pattern = seq_path.replace('/', os.sep)
+            files = sorted(glob.glob(pattern))
+            if files:
+                return files[0].replace('\\', '/')
+
+        return seq_path
 
     # ========================================================================
     # File System Wrapper Methods (for HorusCommentManager)
@@ -550,33 +606,339 @@ class HorusFileSystem:
                          shot: str = None, department: str = None,
                          latest_only: bool = True) -> List[Dict]:
         """
-        List media files (.mov) with flexible filtering.
-        Uses single find command for efficiency.
+        List media files with both MOV and image sequence paths.
+
+        Returns unified records containing:
+        - mov_path: Path to MOV file on V:/igloo_swa_v
+        - image_seq_path: Path pattern to image sequence on W:/igloo_swa_w
+        - media_type: "both", "mov_only", or "image_only"
+
+        Uses Option C: Scan both sources and merge results.
         """
         if not self.provider:
             return []
 
-        # Build search path pattern - handle department filter at any level
+        if not episode:
+            return []
+
+        # Build search path patterns
         ep_part = episode if episode else "*"
         seq_part = sequence if sequence else "*"
         shot_part = shot if shot else "*"
         dept_part = department if department else "*"
 
-        if not episode:
-            return []
+        # Path for MOV files (V: / igloo_swa_v)
+        mov_search_path = f"{self.scene_base}/{ep_part}/{seq_part}/{shot_part}/{dept_part}/output"
 
-        search_path = f"{self.scene_base}/{ep_part}/{seq_part}/{shot_part}/{dept_part}/output"
+        # Path for image sequences (W: / igloo_swa_w) - scan version folders
+        img_scene_base = f"{self.image_root}/{PROJECT_NAME}/{SCENE_PATH}"
+        img_search_path = f"{img_scene_base}/{ep_part}/{seq_part}/{shot_part}/{dept_part}/version"
 
-        # Use find command for SSH (much faster than multiple ls calls)
+        # Use appropriate method based on access mode
         if self.access_mode == "ssh":
-            return self._find_media_files_ssh(search_path, episode, sequence, shot, department, latest_only)
+            return self._find_media_files_merged_ssh(
+                mov_search_path, img_search_path, episode, sequence, shot, department, latest_only
+            )
         else:
-            return self._find_media_files_local(search_path, episode, sequence, shot, department, latest_only)
+            return self._find_media_files_merged_local(
+                mov_search_path, img_search_path, episode, sequence, shot, department, latest_only
+            )
+
+    def _find_media_files_merged_ssh(self, mov_search_path: str, img_search_path: str,
+                                       episode: str, sequence: str, shot: str,
+                                       department: str, latest_only: bool) -> List[Dict]:
+        """Find and merge MOV files and image sequences using SSH."""
+        import time
+        start_time = time.time()
+        print(f"🔍 _find_media_files_merged_ssh:")
+        print(f"   MOV path: {mov_search_path}")
+        print(f"   IMG path: {img_search_path}")
+
+        # 1. Scan MOV files from V: drive
+        mov_map = self._scan_mov_files_ssh(mov_search_path)
+        print(f"   Found {len(mov_map)} MOV entries")
+
+        # 2. Scan image sequence version folders from W: drive
+        img_map = self._scan_image_seq_folders_ssh(img_search_path)
+        print(f"   Found {len(img_map)} image sequence entries")
+
+        # 3. Merge results
+        merged = self._merge_media_sources(mov_map, img_map, latest_only)
+
+        total_time = time.time() - start_time
+        print(f"   Total _find_media_files_merged_ssh: {total_time:.2f}s, found {len(merged)} items")
+
+        return merged
+
+    def _find_media_files_merged_local(self, mov_search_path: str, img_search_path: str,
+                                        episode: str, sequence: str, shot: str,
+                                        department: str, latest_only: bool) -> List[Dict]:
+        """Find and merge MOV files and image sequences using local file system."""
+        import time
+        start_time = time.time()
+        print(f"🔍 _find_media_files_merged_local:")
+        print(f"   MOV path: {mov_search_path}")
+        print(f"   IMG path: {img_search_path}")
+
+        # 1. Scan MOV files from V: drive
+        mov_map = self._scan_mov_files_local(mov_search_path)
+        print(f"   Found {len(mov_map)} MOV entries")
+
+        # 2. Scan image sequence version folders from W: drive
+        img_map = self._scan_image_seq_folders_local(img_search_path)
+        print(f"   Found {len(img_map)} image sequence entries")
+
+        # 3. Merge results
+        merged = self._merge_media_sources(mov_map, img_map, latest_only)
+
+        total_time = time.time() - start_time
+        print(f"   Total _find_media_files_merged_local: {total_time:.2f}s, found {len(merged)} items")
+
+        return merged
+
+    def _scan_mov_files_ssh(self, search_path: str) -> Dict[str, Dict]:
+        """Scan MOV files via SSH and return as dict keyed by shot_dept_version."""
+        import time
+        cmd = f"find {search_path} -maxdepth 1 -name '*.mov' 2>/dev/null"
+        success, output = self.provider._run_ssh_command(cmd, timeout=30)
+
+        mov_map = {}
+        if not success or not output:
+            return mov_map
+
+        for file_path in output.strip().split('\n'):
+            if not file_path or not file_path.endswith('.mov'):
+                continue
+            parsed = self._parse_mov_path(file_path)
+            if parsed:
+                key = f"{parsed['shot']}_{parsed['department']}_{parsed['version']}"
+                mov_map[key] = parsed
+
+        return mov_map
+
+    def _scan_mov_files_local(self, search_path: str) -> Dict[str, Dict]:
+        """Scan MOV files locally and return as dict keyed by shot_dept_version."""
+        import glob
+        pattern = os.path.join(search_path.replace('/', os.sep), '*.mov')
+        files = glob.glob(pattern)
+
+        mov_map = {}
+        for file_path in files:
+            file_path = file_path.replace('\\', '/')
+            parsed = self._parse_mov_path(file_path)
+            if parsed:
+                key = f"{parsed['shot']}_{parsed['department']}_{parsed['version']}"
+                mov_map[key] = parsed
+
+        return mov_map
+
+    def _scan_image_seq_folders_ssh(self, search_path: str) -> Dict[str, Dict]:
+        """Scan image sequence version folders via SSH.
+
+        Path structure: .../version/v001/, .../version/v002/
+        Returns dict keyed by shot_dept_version.
+        """
+        import time
+        # Find version folders (v001, v002, etc.)
+        cmd = f"find {search_path} -maxdepth 1 -type d -name 'v*' 2>/dev/null"
+        success, output = self.provider._run_ssh_command(cmd, timeout=30)
+
+        img_map = {}
+        if not success or not output:
+            return img_map
+
+        for folder_path in output.strip().split('\n'):
+            if not folder_path:
+                continue
+            parsed = self._parse_image_seq_folder(folder_path)
+            if parsed:
+                key = f"{parsed['shot']}_{parsed['department']}_{parsed['version']}"
+                img_map[key] = parsed
+
+        return img_map
+
+    def _scan_image_seq_folders_local(self, search_path: str) -> Dict[str, Dict]:
+        """Scan image sequence version folders locally.
+
+        Path structure: .../version/v001/, .../version/v002/
+        Returns dict keyed by shot_dept_version.
+        """
+        import glob
+        # Find version folders
+        pattern = os.path.join(search_path.replace('/', os.sep), 'v*')
+        folders = [f for f in glob.glob(pattern) if os.path.isdir(f)]
+
+        img_map = {}
+        for folder_path in folders:
+            folder_path = folder_path.replace('\\', '/')
+            parsed = self._parse_image_seq_folder(folder_path)
+            if parsed:
+                key = f"{parsed['shot']}_{parsed['department']}_{parsed['version']}"
+                img_map[key] = parsed
+
+        return img_map
+
+    def _parse_mov_path(self, file_path: str) -> Optional[Dict]:
+        """Parse MOV file path to extract metadata."""
+        parts = file_path.split('/')
+        try:
+            # Find episode (starts with 'Ep' or 'RD')
+            ep_idx = next(i for i, p in enumerate(parts) if p.startswith('Ep') or p.startswith('RD'))
+            ep = parts[ep_idx]
+
+            # Find sequence (starts with 'sq')
+            seq_idx = next(i for i in range(ep_idx + 1, len(parts)) if parts[i].startswith('sq'))
+            seq = parts[seq_idx]
+
+            # Find shot (starts with 'SH')
+            sh_idx = next(i for i in range(seq_idx + 1, len(parts)) if parts[i].startswith('SH'))
+            sh = parts[sh_idx]
+
+            # Department is after shot
+            dept = parts[sh_idx + 1]
+            file_name = parts[-1]
+            version = self._extract_version(file_name)
+
+            return {
+                "episode": ep,
+                "sequence": seq,
+                "shot": sh,
+                "department": dept,
+                "version": version,
+                "file_name": file_name,
+                "mov_path": file_path
+            }
+        except (StopIteration, IndexError):
+            return None
+
+    def _parse_image_seq_folder(self, folder_path: str) -> Optional[Dict]:
+        """Parse image sequence version folder path to extract metadata.
+
+        Path: .../Ep01/sq0010/SH0010/comp/version/v003/
+        """
+        parts = folder_path.rstrip('/').split('/')
+        try:
+            # Find episode (starts with 'Ep' or 'RD')
+            ep_idx = next(i for i, p in enumerate(parts) if p.startswith('Ep') or p.startswith('RD'))
+            ep = parts[ep_idx]
+
+            # Find sequence (starts with 'sq')
+            seq_idx = next(i for i in range(ep_idx + 1, len(parts)) if parts[i].startswith('sq'))
+            seq = parts[seq_idx]
+
+            # Find shot (starts with 'SH')
+            sh_idx = next(i for i in range(seq_idx + 1, len(parts)) if parts[i].startswith('SH'))
+            sh = parts[sh_idx]
+
+            # Department is after shot
+            dept = parts[sh_idx + 1]
+
+            # Version is the folder name (last part)
+            version = parts[-1].lower()  # v001, v002, etc.
+
+            # Construct image sequence path pattern
+            # Pattern: .../version/v003/*.exr (will be resolved when loading)
+            seq_path = f"{folder_path}/*.exr"
+
+            return {
+                "episode": ep,
+                "sequence": seq,
+                "shot": sh,
+                "department": dept,
+                "version": version,
+                "image_seq_path": seq_path,
+                "image_seq_folder": folder_path
+            }
+        except (StopIteration, IndexError):
+            return None
+
+    def _merge_media_sources(self, mov_map: Dict[str, Dict], img_map: Dict[str, Dict],
+                              latest_only: bool) -> List[Dict]:
+        """Merge MOV and image sequence data into unified records."""
+        import time
+
+        # Get all unique keys
+        all_keys = set(mov_map.keys()) | set(img_map.keys())
+
+        # Group by shot_dept to handle latest_only filtering
+        version_groups = {}  # {shot_dept: [items]}
+        sequence_caches = {}  # Cache for status lookups
+
+        for key in all_keys:
+            mov_data = mov_map.get(key)
+            img_data = img_map.get(key)
+
+            # Get common fields from either source
+            ep = (mov_data or img_data).get('episode')
+            seq = (mov_data or img_data).get('sequence')
+            sh = (mov_data or img_data).get('shot')
+            dept = (mov_data or img_data).get('department')
+            version = (mov_data or img_data).get('version')
+
+            # Determine media availability
+            has_mov = mov_data is not None
+            has_img = img_data is not None
+
+            if has_mov and has_img:
+                media_type = "both"
+            elif has_mov:
+                media_type = "mov_only"
+            else:
+                media_type = "image_only"
+
+            # Load status from sequence cache
+            seq_key = f"{ep}_{seq}"
+            if seq_key not in sequence_caches:
+                sequence_caches[seq_key] = self.load_sequence_status_cache(ep, seq)
+
+            status_key = f"{sh}_{dept}_{version}"
+            status_entry = sequence_caches[seq_key].get("statuses", {}).get(status_key)
+            status = status_entry.get("current_status", "wip") if status_entry else "wip"
+
+            # Build unified record
+            merged_item = {
+                "name": f"{ep}_{sh}",
+                "file_name": mov_data.get('file_name') if mov_data else f"{sh}_{dept}_{version}",
+                "episode": ep,
+                "sequence": seq,
+                "shot": sh,
+                "department": dept,
+                "version": version,
+                "status": status,
+                "media_type": media_type,
+                "mov_path": mov_data.get('mov_path') if mov_data else None,
+                "image_seq_path": img_data.get('image_seq_path') if img_data else None,
+                "image_seq_folder": img_data.get('image_seq_folder') if img_data else None,
+                # Keep file_path for backward compatibility (defaults to mov_path)
+                "file_path": mov_data.get('mov_path') if mov_data else img_data.get('image_seq_path')
+            }
+
+            # Group by shot_dept for version filtering
+            group_key = f"{ep}_{sh}_{dept}"
+            if group_key not in version_groups:
+                version_groups[group_key] = []
+            version_groups[group_key].append(merged_item)
+
+        # Apply latest_only filter
+        results = []
+        for group_key, items in version_groups.items():
+            items.sort(key=lambda x: x['version'], reverse=True)
+            if latest_only:
+                if items:
+                    results.append(items[0])
+            else:
+                results.extend(items)
+
+        return results
+
+    # ========================================================================
+    # Legacy methods (kept for backward compatibility, now unused)
+    # ========================================================================
 
     def _find_media_files_ssh(self, search_path: str, episode: str,
                                sequence: str, shot: str, department: str,
                                latest_only: bool) -> List[Dict]:
-        """Find media files using SSH find command."""
+        """Find media files using SSH find command. (LEGACY - kept for reference)"""
         import time
         start_time = time.time()
 

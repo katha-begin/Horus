@@ -2075,7 +2075,14 @@ def load_selected_playlist_item_in_rv():
         if not clip_data:
             return
 
-        file_path = clip_data.get("file_path", "")
+        # Get playback path based on media source preference (SAME AS NAVIGATOR)
+        file_path = get_media_playback_path(clip_data)
+        source_pref = get_preferred_media_source()
+
+        print(f"🎬 Playlist media source preference: {source_pref}")
+        print(f"   mov_path: {clip_data.get('mov_path')}")
+        print(f"   image_seq_path: {clip_data.get('image_seq_path')}")
+        print(f"   Selected path: {file_path}")
 
         # Update current media context for comments (SAME AS NAVIGATOR)
         current_media_context = {
@@ -2085,14 +2092,12 @@ def load_selected_playlist_item_in_rv():
             "department": clip_data.get('department'),
             "version": clip_data.get('version'),
             "media_file": clip_data.get('file_name'),
-            "file_path": file_path
+            "file_path": file_path,
+            "media_type": clip_data.get('media_type', 'unknown')
         }
         print(f"📝 Media context: {current_media_context['episode']}/{current_media_context['sequence']}/{current_media_context['shot']}")
 
         if file_path:
-            # Convert path for RV if using file system backend (SAME AS NAVIGATOR)
-            if horus_fs and horus_fs.access_mode != "none":
-                file_path = horus_fs.convert_path_for_rv(file_path)
             print(f"Loading media file: {file_path}")
             # Load the media file in Open RV (SAME AS NAVIGATOR)
             load_media_in_rv(file_path)
@@ -2101,6 +2106,7 @@ def load_selected_playlist_item_in_rv():
             load_comments_for_current_media()
         else:
             print("No file path found for media item")
+            print(f"   Media type: {clip_data.get('media_type')}")
 
     except Exception as e:
         print(f"❌ Error loading in RV: {e}")
@@ -3093,12 +3099,45 @@ def create_search_panel():
         version_toggle.setObjectName("version_toggle")
         version_toggle.setChecked(True)
         version_toggle.setStyleSheet("QCheckBox { color: #e0e0e0; }")
-        filter_layout.addWidget(version_toggle, 2, 2, 1, 2)  # Span 2 columns
+        filter_layout.addWidget(version_toggle, 2, 2)
 
         reset_btn = QPushButton("Reset")
         reset_btn.setObjectName("refresh_horus_btn")
         reset_btn.setToolTip("Reset all filters")
-        filter_layout.addWidget(reset_btn, 2, 4, 1, 2)  # Span 2 columns
+        filter_layout.addWidget(reset_btn, 2, 3)
+
+        # Row 3: Media Source Toggle (Image Sequence vs MOV)
+        source_label = QLabel("Source:")
+        source_label.setFixedWidth(40)
+        filter_layout.addWidget(source_label, 3, 0)
+
+        # Radio button group for media source selection
+        from PySide2.QtWidgets import QButtonGroup, QRadioButton
+        media_source_frame = QFrame()
+        media_source_layout = QHBoxLayout(media_source_frame)
+        media_source_layout.setContentsMargins(0, 0, 0, 0)
+        media_source_layout.setSpacing(10)
+
+        img_seq_radio = QRadioButton("Image Seq")
+        img_seq_radio.setObjectName("img_seq_radio")
+        img_seq_radio.setChecked(True)  # Default to image sequence
+        img_seq_radio.setToolTip("Play image sequences from W: drive")
+        img_seq_radio.setStyleSheet("QRadioButton { color: #e0e0e0; }")
+
+        mov_radio = QRadioButton("MOV")
+        mov_radio.setObjectName("mov_radio")
+        mov_radio.setToolTip("Play MOV files from V: drive")
+        mov_radio.setStyleSheet("QRadioButton { color: #e0e0e0; }")
+
+        media_source_group = QButtonGroup(widget)
+        media_source_group.addButton(img_seq_radio, 0)  # ID 0 = Image Sequence
+        media_source_group.addButton(mov_radio, 1)      # ID 1 = MOV
+
+        media_source_layout.addWidget(img_seq_radio)
+        media_source_layout.addWidget(mov_radio)
+        media_source_layout.addStretch()
+
+        filter_layout.addWidget(media_source_frame, 3, 1, 1, 5)  # Span remaining columns
 
         layout.addWidget(filter_frame)
 
@@ -3159,8 +3198,11 @@ def create_search_panel():
         widget.status_filter = status_filter
         widget.search_input = search_input
         widget.version_toggle = version_toggle
+        widget.img_seq_radio = img_seq_radio
+        widget.mov_radio = mov_radio
+        widget.media_source_group = media_source_group
 
-        print("Search panel created (3-column filter layout)")
+        print("Search panel created (4-row filter layout with media source toggle)")
         return widget
 
     except Exception as e:
@@ -4040,6 +4082,56 @@ def on_navigator_status_changed(new_status, combo_box):
         traceback.print_exc()
 
 
+def get_preferred_media_source():
+    """Get the preferred media source from UI toggle (Image Seq or MOV)."""
+    global search_dock
+    try:
+        search_widget = search_dock.widget() if search_dock else None
+        if search_widget and hasattr(search_widget, 'img_seq_radio'):
+            return "image_seq" if search_widget.img_seq_radio.isChecked() else "mov"
+    except:
+        pass
+    return "image_seq"  # Default to image sequence
+
+
+def get_media_playback_path(media_item):
+    """Get the appropriate file path for playback based on media source preference.
+
+    Args:
+        media_item: Dict containing mov_path, image_seq_path, and file_path
+
+    Returns:
+        The file path to use for playback
+    """
+    global horus_fs
+
+    prefer_image_seq = get_preferred_media_source() == "image_seq"
+
+    if prefer_image_seq:
+        # Prefer image sequence, fallback to MOV
+        path = media_item.get('image_seq_path') or media_item.get('mov_path')
+    else:
+        # Prefer MOV, fallback to image sequence
+        path = media_item.get('mov_path') or media_item.get('image_seq_path')
+
+    # Fallback to legacy file_path field
+    if not path:
+        path = media_item.get('file_path', '')
+
+    if not path:
+        return ''
+
+    # For image sequences with wildcard, resolve to first frame
+    if '*' in path and horus_fs:
+        path = horus_fs.resolve_image_sequence_pattern(path)
+
+    # Convert path for RV
+    if horus_fs and horus_fs.access_mode != "none":
+        path = horus_fs.convert_path_for_rv(path)
+
+    return path
+
+
 def on_media_table_double_click(item):
     """Handle double-click on media table item."""
     global horus_fs, horus_comments, current_media_context
@@ -4062,7 +4154,14 @@ def on_media_table_double_click(item):
         if name_item:
             media_item = name_item.data(Qt.UserRole)
             if media_item:
-                file_path = media_item.get('file_path') or media_item.get('storage_url', '')
+                # Get playback path based on media source preference (Image Seq / MOV)
+                file_path = get_media_playback_path(media_item)
+                source_pref = get_preferred_media_source()
+
+                print(f"🎬 Media source preference: {source_pref}")
+                print(f"   mov_path: {media_item.get('mov_path')}")
+                print(f"   image_seq_path: {media_item.get('image_seq_path')}")
+                print(f"   Selected path: {file_path}")
 
                 # Update current media context for comments
                 current_media_context = {
@@ -4072,14 +4171,12 @@ def on_media_table_double_click(item):
                     "department": media_item.get('department'),
                     "version": media_item.get('version'),
                     "media_file": media_item.get('file_name'),
-                    "file_path": file_path
+                    "file_path": file_path,
+                    "media_type": media_item.get('media_type', 'unknown')
                 }
                 print(f"📝 Media context: {current_media_context['episode']}/{current_media_context['sequence']}/{current_media_context['shot']}")
 
                 if file_path:
-                    # Convert path for RV if using file system backend
-                    if horus_fs and horus_fs.access_mode != "none":
-                        file_path = horus_fs.convert_path_for_rv(file_path)
                     print(f"Loading media file: {file_path}")
                     # Load the media file in Open RV
                     load_media_in_rv(file_path)
@@ -4088,6 +4185,7 @@ def on_media_table_double_click(item):
                     load_comments_for_current_media()
                 else:
                     print("No file path found for media item")
+                    print(f"   Media type: {media_item.get('media_type')}")
             else:
                 print("No media item data found")
 
@@ -4144,23 +4242,26 @@ def on_navigator_table_context_menu(position):
             # Create new playlist and add selected items to it
             create_new_playlist_with_items(selected_rows, media_table)
         elif action == load_action:
-            # Load ALL selected items in RV
+            # Load ALL selected items in RV using preferred media source
             file_paths = []
+            source_pref = get_preferred_media_source()
+            print(f"🎬 Loading with source preference: {source_pref}")
+
             for index in selected_rows:
                 row = index.row()
                 name_item = media_table.item(row, 0)
                 if name_item:
                     media_item = name_item.data(Qt.UserRole)
                     if media_item:
-                        file_path = media_item.get('file_path', '')
-                        if file_path and horus_fs:
-                            file_path = horus_fs.convert_path_for_rv(file_path)
+                        # Use the preference-aware path getter
+                        file_path = get_media_playback_path(media_item)
+                        if file_path:
                             file_paths.append(file_path)
 
             # Load all files in RV
             if file_paths:
                 load_multiple_media_in_rv(file_paths)
-                print(f"✅ Loaded {len(file_paths)} media files in RV")
+                print(f"✅ Loaded {len(file_paths)} media files in RV ({source_pref})")
         elif action and action.data():
             # Add to selected playlist
             playlist_id = action.data()
