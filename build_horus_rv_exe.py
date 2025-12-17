@@ -37,6 +37,41 @@ def build_executable():
     try:
         print("Building horus-rv.exe...")
 
+        # Check which files exist and build the data files list
+        data_files = []
+
+        # Core Python files (must exist)
+        core_files = [
+            "rv_horus_integration.py",
+            "horus_file_system.py",
+            "horus_comments.py",
+            "horus_playlists.py",
+            "horus_version.py",
+        ]
+
+        for f in core_files:
+            if os.path.exists(f):
+                data_files.append(f"--add-data={f};.")
+                print(f"  ✓ Including: {f}")
+            else:
+                print(f"  ⚠ Warning: {f} not found")
+
+        # Config files (optional)
+        config_files = [
+            "version.json",
+            "swa_project_config.json",
+        ]
+
+        for f in config_files:
+            if os.path.exists(f):
+                data_files.append(f"--add-data={f};.")
+                print(f"  ✓ Including: {f}")
+
+        # Sample database (optional)
+        if os.path.isdir("sample_db"):
+            data_files.append("--add-data=sample_db;sample_db")
+            print("  ✓ Including: sample_db/")
+
         # PyInstaller command with additional data files
         cmd = [
             "python", "-m", "PyInstaller",
@@ -44,14 +79,18 @@ def build_executable():
             "--name", "horus-rv",          # Output name
             "--console",                   # Keep console window
             "--icon=NONE",                 # No icon for now
-            "--add-data", "rv_horus_integration.py;.",  # Include integration script
-            "--add-data", "sample_db;sample_db",        # Include database files
-            "--add-data", "src;src",                    # Include source packages
             "--hidden-import", "PySide2.QtWidgets",    # Ensure PySide2 is included
             "--hidden-import", "PySide2.QtCore",       # Ensure PySide2 is included
             "--hidden-import", "PySide2.QtGui",        # Ensure PySide2 is included
+            "--hidden-import", "paramiko",             # SSH support
+            "--hidden-import", "json",
+            "--hidden-import", "re",
+            "--hidden-import", "datetime",
+        ] + data_files + [
             "horus_rv_launcher.py"         # Source script
         ]
+
+        print(f"\n📦 Running PyInstaller...")
 
         # Run PyInstaller
         result = subprocess.run(cmd, capture_output=True, text=True)
