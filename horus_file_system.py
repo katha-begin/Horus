@@ -634,6 +634,11 @@ class HorusFileSystem:
         img_scene_base = f"{self.image_root}/{PROJECT_NAME}/{SCENE_PATH}"
         img_search_path = f"{img_scene_base}/{ep_part}/{seq_part}/{shot_part}/{dept_part}/version"
 
+        print(f"🔍 list_media_files: access_mode={self.access_mode}")
+        print(f"   image_root: {self.image_root}")
+        print(f"   MOV search: {mov_search_path}")
+        print(f"   IMG search: {img_search_path}")
+
         # Use appropriate method based on access mode
         if self.access_mode == "ssh":
             return self._find_media_files_merged_ssh(
@@ -739,17 +744,25 @@ class HorusFileSystem:
         Returns dict keyed by shot_dept_version.
         """
         import time
-        # Find version folders (v001, v002, etc.)
+        # Use find with wildcards to locate all version folders
+        # search_path may contain wildcards like: .../Ep01/*/SH*/*/version
+        # We need to find all v* folders within any matching version directories
         cmd = f"find {search_path} -maxdepth 1 -type d -name 'v*' 2>/dev/null"
-        success, output = self.provider._run_ssh_command(cmd, timeout=30)
+        success, output = self.provider._run_ssh_command(cmd, timeout=60)
 
         img_map = {}
         if not success or not output:
-            return img_map
+            # Try alternative: use shell expansion with ls
+            cmd_alt = f"ls -d {search_path}/v*/ 2>/dev/null"
+            success, output = self.provider._run_ssh_command(cmd_alt, timeout=60)
+            if not success or not output:
+                return img_map
 
         for folder_path in output.strip().split('\n'):
             if not folder_path:
                 continue
+            # Remove trailing slash if present
+            folder_path = folder_path.rstrip('/')
             parsed = self._parse_image_seq_folder(folder_path)
             if parsed:
                 key = f"{parsed['shot']}_{parsed['department']}_{parsed['version']}"
@@ -764,9 +777,14 @@ class HorusFileSystem:
         Returns dict keyed by shot_dept_version.
         """
         import glob
-        # Find version folders
-        pattern = os.path.join(search_path.replace('/', os.sep), 'v*')
+        # Find version folders - search_path may contain wildcards
+        # Convert to OS-specific path and add v* pattern
+        search_path_os = search_path.replace('/', os.sep)
+        pattern = os.path.join(search_path_os, 'v*')
+
+        print(f"   Image seq local pattern: {pattern}")
         folders = [f for f in glob.glob(pattern) if os.path.isdir(f)]
+        print(f"   Found {len(folders)} version folders")
 
         img_map = {}
         for folder_path in folders:
