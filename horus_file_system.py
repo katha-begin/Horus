@@ -577,16 +577,27 @@ class HorusFileSystem:
                                sequence: str, shot: str, department: str,
                                latest_only: bool) -> List[Dict]:
         """Find media files using SSH find command."""
+        import time
+        start_time = time.time()
+
+        print(f"🔍 _find_media_files_ssh: search_path={search_path}")
+
         # Use find command with -name pattern
         cmd = f"find {search_path} -maxdepth 1 -name '*.mov' 2>/dev/null"
+        cmd_start = time.time()
         success, output = self.provider._run_ssh_command(cmd, timeout=30)
+        cmd_time = time.time() - cmd_start
+        print(f"   SSH find command took: {cmd_time:.2f}s")
 
         if not success or not output:
+            print(f"   No files found or command failed")
             return []
 
         media_files = []
         version_map = {}
+        sequence_caches = {}  # Pre-load sequence caches
 
+        parse_start = time.time()
         for file_path in output.strip().split('\n'):
             if not file_path or not file_path.endswith('.mov'):
                 continue
@@ -615,8 +626,18 @@ class HorusFileSystem:
             version = self._extract_version(file_name)
             key = f"{ep}_{sh}_{dept}"
 
-            # Load status from sequence cache (defaults to "wip" if not set)
-            status = self.get_shot_status(ep, seq, sh, dept, version)
+            # Pre-load sequence cache once per sequence
+            seq_key = f"{ep}_{seq}"
+            if seq_key not in sequence_caches:
+                cache_load_start = time.time()
+                sequence_caches[seq_key] = self.load_sequence_status_cache(ep, seq)
+                cache_load_time = time.time() - cache_load_start
+                print(f"   Loaded cache for {seq_key}: {cache_load_time:.2f}s")
+
+            # Get status from pre-loaded cache
+            status_key = f"{sh}_{dept}_{version}"
+            status_entry = sequence_caches[seq_key].get("statuses", {}).get(status_key)
+            status = status_entry.get("current_status", "wip") if status_entry else "wip"
 
             media_item = {
                 "file_name": file_name,
@@ -634,7 +655,11 @@ class HorusFileSystem:
                 version_map[key] = []
             version_map[key].append(media_item)
 
+        parse_time = time.time() - parse_start
+        print(f"   Parsing files took: {parse_time:.2f}s")
+
         # Apply latest_only filter
+        filter_start = time.time()
         for key, versions in version_map.items():
             versions.sort(key=lambda x: x['version'], reverse=True)
             if latest_only:
@@ -643,6 +668,12 @@ class HorusFileSystem:
             else:
                 media_files.extend(versions)
 
+        filter_time = time.time() - filter_start
+        print(f"   Filtering took: {filter_time:.2f}s")
+
+        total_time = time.time() - start_time
+        print(f"   Total _find_media_files_ssh: {total_time:.2f}s, found {len(media_files)} files")
+
         return media_files
 
     def _find_media_files_local(self, search_path: str, episode: str,
@@ -650,14 +681,24 @@ class HorusFileSystem:
                                  latest_only: bool) -> List[Dict]:
         """Find media files using local glob."""
         import glob
+        import time
+
+        start_time = time.time()
+        print(f"🔍 _find_media_files_local: search_path={search_path}")
 
         # Convert to glob pattern
         pattern = os.path.join(search_path.replace('/', os.sep), '*.mov')
+
+        glob_start = time.time()
         files = glob.glob(pattern)
+        glob_time = time.time() - glob_start
+        print(f"   Glob took: {glob_time:.2f}s, found {len(files)} files")
 
         media_files = []
         version_map = {}
+        sequence_caches = {}  # Pre-load sequence caches
 
+        parse_start = time.time()
         for file_path in files:
             file_path = file_path.replace('\\', '/')
             parts = file_path.split('/')
@@ -683,8 +724,18 @@ class HorusFileSystem:
             version = self._extract_version(file_name)
             key = f"{ep}_{sh}_{dept}"
 
-            # Load status from sequence cache (defaults to "wip" if not set)
-            status = self.get_shot_status(ep, seq, sh, dept, version)
+            # Pre-load sequence cache once per sequence
+            seq_key = f"{ep}_{seq}"
+            if seq_key not in sequence_caches:
+                cache_load_start = time.time()
+                sequence_caches[seq_key] = self.load_sequence_status_cache(ep, seq)
+                cache_load_time = time.time() - cache_load_start
+                print(f"   Loaded cache for {seq_key}: {cache_load_time:.2f}s")
+
+            # Get status from pre-loaded cache
+            status_key = f"{sh}_{dept}_{version}"
+            status_entry = sequence_caches[seq_key].get("statuses", {}).get(status_key)
+            status = status_entry.get("current_status", "wip") if status_entry else "wip"
 
             media_item = {
                 "file_name": file_name,
@@ -702,7 +753,11 @@ class HorusFileSystem:
                 version_map[key] = []
             version_map[key].append(media_item)
 
+        parse_time = time.time() - parse_start
+        print(f"   Parsing files took: {parse_time:.2f}s")
+
         # Apply latest_only filter
+        filter_start = time.time()
         for key, versions in version_map.items():
             versions.sort(key=lambda x: x['version'], reverse=True)
             if latest_only:
@@ -710,6 +765,12 @@ class HorusFileSystem:
                     media_files.append(versions[0])
             else:
                 media_files.extend(versions)
+
+        filter_time = time.time() - filter_start
+        print(f"   Filtering took: {filter_time:.2f}s")
+
+        total_time = time.time() - start_time
+        print(f"   Total _find_media_files_local: {total_time:.2f}s, found {len(media_files)} files")
 
         return media_files
 
@@ -805,34 +866,43 @@ class HorusFileSystem:
         }
         """
         if not self.provider:
+            print(f"   ⚠️ load_sequence_status_cache: No provider available")
             return {}
 
         cache_key = f"{episode}_{sequence}"
 
         # Check in-memory cache first
         if cache_key in self.status_cache:
+            print(f"   ✅ load_sequence_status_cache: Using in-memory cache for {cache_key}")
             return self.status_cache[cache_key]
 
         # Load from file
         path = self.get_sequence_status_file_path(episode, sequence)
+        print(f"   📂 load_sequence_status_cache: Loading from {path}")
+
         content = self.provider.read_file(path)
 
         if content:
             try:
                 data = json.loads(content)
                 self.status_cache[cache_key] = data
+                print(f"   ✅ load_sequence_status_cache: Loaded {len(data.get('statuses', {}))} statuses from file")
                 return data
             except json.JSONDecodeError as e:
-                print(f"Error parsing status cache file: {e}")
+                print(f"   ❌ Error parsing status cache file: {e}")
+        else:
+            print(f"   ℹ️ load_sequence_status_cache: No status file found, using empty cache")
 
         # Return empty structure
-        return {
+        empty_cache = {
             "version": "1.0",
             "episode": episode,
             "sequence": sequence,
             "last_updated": datetime.utcnow().isoformat(),
             "statuses": {}
         }
+        self.status_cache[cache_key] = empty_cache
+        return empty_cache
 
     def save_sequence_status_cache(self, episode: str, sequence: str, cache_data: Dict) -> bool:
         """Save status cache for a sequence."""
