@@ -1796,7 +1796,7 @@ def load_playlist_items_to_table(playlist_data):
 
             # Status column - DROPDOWN (load current status from cache)
             # Get current status from sequence status cache (defaults to "wip")
-            sequence = clip.get("sequence", "")  # Extract sequence from clip data
+            sequence = clip.get("sequence", "")
             if horus_fs and episode and sequence and shot and dept and version:
                 status = horus_fs.get_shot_status(episode, sequence, shot, dept, version)
             else:
