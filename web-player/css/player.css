@@ -1,0 +1,522 @@
+/* Horus Web Player - OpenRV-Inspired VFX Review System */
+/* Dark Theme Professional UI */
+
+:root {
+    /* Color Palette - VFX Industry Standard Dark Theme */
+    --bg-primary: #1a1a1a;
+    --bg-secondary: #252525;
+    --bg-tertiary: #2d2d2d;
+    --bg-hover: #353535;
+    --border-color: #404040;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --accent-primary: #4a9eff;
+    --accent-secondary: #ff8c42;
+    --success: #4caf50;
+    --warning: #ff9800;
+    --error: #f44336;
+    --shadow: rgba(0, 0, 0, 0.5);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    overflow: hidden;
+    height: 100vh;
+}
+
+/* App Container */
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+}
+
+/* Header */
+.app-header {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 8px var(--shadow);
+    z-index: 100;
+}
+
+.logo h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--accent-primary);
+    margin-bottom: 2px;
+}
+
+.logo .subtitle {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+/* Buttons */
+.btn-primary, .btn-secondary {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background: var(--accent-primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #3a8eef;
+    box-shadow: 0 2px 8px rgba(74, 158, 255, 0.3);
+}
+
+.btn-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    width: 100%;
+    margin-top: 8px;
+}
+
+.btn-secondary:hover {
+    background: var(--bg-hover);
+}
+
+/* Main Content */
+.main-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Viewport Container */
+.viewport-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
+    position: relative;
+}
+
+.viewport {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    position: relative;
+    overflow: hidden;
+}
+
+#videoPlayer {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    display: block;
+}
+
+#annotationCanvas, #imageSequenceCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+#annotationCanvas {
+    pointer-events: auto;
+    cursor: crosshair;
+}
+
+/* Viewport Info Overlay */
+.viewport-info {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    display: flex;
+    gap: 16px;
+}
+
+.info-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Annotation Toolbar */
+.annotation-toolbar {
+    display: flex;
+    gap: 4px;
+    padding: 8px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    align-items: center;
+}
+
+.tool-btn {
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.tool-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+}
+
+.tool-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+.color-picker {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+}
+
+#annotationColor {
+    width: 40px;
+    height: 32px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* Right Sidebar */
+.sidebar-right {
+    width: 320px;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.panel {
+    padding: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.panel h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.annotation-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 8px;
+}
+
+.annotation-item {
+    padding: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+.annotation-item:hover {
+    background: var(--bg-hover);
+    cursor: pointer;
+}
+
+.empty-state {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
+/* Color Controls */
+.color-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.control-group label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.control-group input[type="range"] {
+    width: 100%;
+    height: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.control-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.control-group input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+.control-group span {
+    font-size: 12px;
+    color: var(--text-primary);
+    font-family: 'Courier New', monospace;
+}
+
+/* Media Info */
+.media-info {
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.media-info p {
+    margin-bottom: 4px;
+}
+
+/* Timeline Container */
+.timeline-container {
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    padding: 12px 16px;
+    box-shadow: 0 -2px 8px var(--shadow);
+}
+
+/* Transport Controls */
+.transport-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.transport-btn {
+    width: 36px;
+    height: 36px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.transport-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+}
+
+.transport-btn:active {
+    background: var(--accent-primary);
+    color: white;
+}
+
+.transport-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+.playback-speed, .fps-display {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 16px;
+}
+
+.playback-speed label, .fps-display label {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+#playbackSpeed, #fpsInput {
+    padding: 6px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+#fpsInput {
+    width: 60px;
+}
+
+/* Timeline */
+.timeline {
+    position: relative;
+    height: 40px;
+}
+
+.timeline-ruler {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 20px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px 4px 0 0;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+.timeline-track {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 20px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 0 0 4px 4px;
+    cursor: pointer;
+    position: relative;
+}
+
+.timeline-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: var(--accent-primary);
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.timeline-markers {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100%;
+    pointer-events: none;
+}
+
+.timeline-marker {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    background: var(--accent-secondary);
+}
+
+.timeline-scrubber {
+    position: absolute;
+    top: -2px;
+    left: 0;
+    width: 12px;
+    height: 24px;
+    background: var(--accent-primary);
+    border: 2px solid white;
+    border-radius: 2px;
+    cursor: pointer;
+    transform: translateX(-50%);
+    box-shadow: 0 2px 4px var(--shadow);
+}
+
+/* Status Bar */
+.status-bar {
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border-color);
+    padding: 8px 16px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-tertiary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--bg-hover);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .sidebar-right {
+        width: 280px;
+    }
+}
+
+@media (max-width: 768px) {
+    .sidebar-right {
+        display: none;
+    }
+
+    .transport-controls {
+        flex-wrap: wrap;
+    }
+}
